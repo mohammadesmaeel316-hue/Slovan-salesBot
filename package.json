@@ -1,0 +1,24 @@
+{
+  "name": "sales-order-telegram-bot",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "description": "Arabic Telegram bot for creating sales orders and calculating totals.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "check": "node --check src/index.js && node --check src/config.js && node --check src/db.js && node --check src/accessHandlers.js && node --check src/orderFlow.js && node --check src/deliveryPricesSheet.js && node --check src/itemsSheet.js && node --check src/packagesSheet.js && node --check src/taskTracker.js && node --check src/utils.js && node --check src/webhookSecurity.js && node --check api/telegram.js && node --check api/health.js && node --check api/monthly-report.js && node --check scripts/set-webhook.js",
+    "test": "node --test",
+    "webhook": "node scripts/set-webhook.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "16.6.1",
+    "exceljs": "4.4.0",
+    "node-telegram-bot-api": "0.66.0",
+    "pg": "8.13.1"
+  }
+}

@@ -1,0 +1,188 @@
+SLOVAN SALES BOT - CREATE AND CONNECT A NEW SUPABASE PROJECT
+=============================================================
+
+Use a separate Supabase project for the Sales Bot.
+Do NOT use the Data Analysis Bot database for this bot. The two bots have
+different tables and should stay separate. Later, the Sales Bot can safely
+read customer profiles from the Data Analysis Bot through a second connection.
+
+IMPORTANT
+---------
+- The database password and DATABASE_URL are secrets. Never send them in chat,
+  put them in GitHub, or commit them to Git.
+- DATABASE_URL is a PostgreSQL URL beginning with postgresql://
+- It is NOT this URL: https://your-project.supabase.co
+- A new Supabase project starts with an empty database.
+
+
+PART 1 - CREATE THE NEW SUPABASE PROJECT
+----------------------------------------
+1. Open https://supabase.com/dashboard
+
+2. Sign in and choose your organization.
+
+3. Click New project.
+
+4. Fill in the project form:
+
+   Name:     sales-bot (or another clear name)
+   Database password: create a strong password and save it safely
+   Region:   choose the closest available region, normally Europe / Frankfurt
+             for Egypt if it is available
+
+5. Click Create new project.
+
+6. Wait until the project status is Active. This can take a few minutes.
+
+7. Copy the project reference from the URL or project settings. It looks like:
+
+   abcdefghijklmnopqrst
+
+8. The project URL has this format:
+
+   https://PROJECT_REF.supabase.co
+
+
+PART 2 - CREATE THE SALES BOT TABLES
+------------------------------------
+The Sales Bot needs its tables before it can start.
+
+1. Open the new Supabase project.
+
+2. In the left menu, open SQL Editor.
+
+3. Click New query.
+
+4. On your computer, open this file from the Sales Bot folder:
+
+   C:\Users\DELL\Desktop\sales Bot\schema.sql
+
+5. Copy ALL contents of schema.sql.
+
+6. Paste it into the Supabase SQL Editor.
+
+7. Click Run.
+
+8. Wait for the success message. This creates the Sales Bot tables, including:
+
+   - bot users and access requests
+   - delivery prices
+   - catalog items
+   - packages and package items
+   - sales orders
+   - children and order lines
+
+9. Do not run the Data Analysis Bot schema.sql in this same project.
+
+
+PART 3 - COPY THE CORRECT DATABASE CONNECTION STRING
+-----------------------------------------------------
+1. In the Supabase dashboard, click Connect near the top of the project page.
+
+2. Choose Transaction pooler.
+
+3. Copy the PostgreSQL connection string. It should use port 6543 and look
+   similar to this:
+
+   postgresql://postgres.PROJECT_REF:YOUR_PASSWORD@POOLER_HOST:6543/postgres
+
+4. Replace YOUR_PASSWORD with the database password from Part 1 if Supabase
+   has not already included it.
+
+5. Keep the complete result private. This is your DATABASE_URL.
+
+Why Transaction pooler?
+The Sales Bot runs as Vercel serverless functions. Transaction pooler is the
+recommended connection type for short-lived serverless database queries.
+
+
+PART 4 - ADD THE DATABASE TO VERCEL
+-----------------------------------
+1. Open https://vercel.com/dashboard
+
+2. Open your Sales Bot project.
+
+3. Open Settings -> Environment Variables.
+
+4. Add these variables for Production:
+
+   Name:  DATABASE_URL
+   Value: the private PostgreSQL Transaction pooler connection string
+
+   Name:  SUPABASE_PROJECT_REF
+   Value: the project reference from Part 1
+
+   Name:  SUPABASE_URL
+   Value: https://PROJECT_REF.supabase.co
+
+5. DATABASE_URL is the required connection used by the bot. The project ref
+   and URL are included for clear configuration and future Supabase features.
+
+6. Confirm that the values are marked Sensitive/Hidden where Vercel offers
+   that option.
+
+7. Deploy the Sales Bot again so it receives the new variables:
+
+   cd "C:\Users\DELL\Desktop\sales Bot"
+   corepack pnpm dlx vercel@59.0.0 --prod
+
+
+PART 5 - UPDATE THE LOCAL .env FILE
+------------------------------------
+1. In the Sales Bot folder, open .env.
+
+2. Add or update these lines:
+
+   DATABASE_URL=your_private_postgresql_connection_string
+   SUPABASE_PROJECT_REF=your_project_ref
+   SUPABASE_URL=https://your_project_ref.supabase.co
+
+3. Save the file.
+
+4. Never commit .env. It is already ignored by Git.
+
+
+PART 6 - VERIFY THE CONNECTION
+------------------------------
+1. Use the stable Vercel domain, for example:
+
+   https://sales-bot-five.vercel.app
+
+2. Open this address in a browser:
+
+   https://YOUR-SALES-BOT-DOMAIN/api/health
+
+3. Expected result:
+
+   {"ok":true,"database":"ready"}
+
+4. If the result says Authentication schema is incomplete:
+
+   - Return to Supabase SQL Editor.
+   - Run the complete Sales Bot schema.sql again.
+   - Deploy again.
+
+5. Send /start to the Sales Telegram Bot and test a menu action.
+
+
+COMMON ERRORS
+-------------
+1. password authentication failed
+   - DATABASE_URL password is wrong.
+   - Reset or copy the password again in Supabase -> Project Settings ->
+     Database, then update Vercel and deploy again.
+
+2. getaddrinfo ENOTFOUND or connection timeout
+   - Use the Transaction pooler URL on port 6543, not the direct db.PROJECT...
+     URL.
+
+3. Bot works locally but not on Vercel
+   - Check DATABASE_URL exists in Vercel Production variables.
+   - Deploy again after changing a Vercel variable.
+
+4. I want to start again with no test orders
+   - Delete only sales_orders rows. This automatically removes linked children
+     and order lines.
+   - Do not delete catalog items, packages, delivery prices, or users unless
+     you intentionally want to reset those too.
+

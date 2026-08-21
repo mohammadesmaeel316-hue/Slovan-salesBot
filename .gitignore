@@ -1,0 +1,33 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Runtime files
+downloads/
+uploads/
+exports/
+logs/
+*.log
+
+# Local tooling
+.codex-tmp/
+.tmp/
+.vercel/
+
+# Generated workbook artifacts
+outputs/
+
+# Private reference workbook
+Sales.xlsx
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+.vercel
+.env*
