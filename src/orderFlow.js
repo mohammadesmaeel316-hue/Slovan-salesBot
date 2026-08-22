@@ -45,7 +45,7 @@ const ORDER_STEPS = new Set([
   "order_parent_phone_3",
   "order_cartoon",
   "order_school",
-  "order_label_color",
+  "order_label_color", "order_line_label_color", "order_line_label_white_count", "order_line_label_black_count",
   "order_custom_label_color",
   "order_type",
   "order_list",
@@ -315,6 +315,7 @@ function labelKeyboard() {
     "اختر لون ليبل الملابس",
   );
 }
+function lineLabelKeyboard() { return keyboard(controls([[{ text: "أبيض" }, { text: "أسود" }, { text: "الاثنين" }]]), "اختر لون الليبل"); }
 
 function orderTypeKeyboard() {
   return keyboard(
@@ -516,6 +517,9 @@ async function promptForState(bot, msg, state) {
     ],
     order_school: ["اكتب اسم المدرسة:", textKeyboard("اسم المدرسة")],
     order_label_color: ["اختر لون ليبل الملابس:", labelKeyboard()],
+    order_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard()],
+    order_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.pendingLine?.quantity || 1}`, textKeyboard("عدد الأبيض")],
+    order_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.pendingLine?.quantity || 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
     order_custom_label_color: [
       "اكتب لون ليبل الملابس:",
       textKeyboard("لون الليبل"),
@@ -1524,7 +1528,7 @@ async function handleOrderMessage(bot, msg, text, role) {
     const children = clone(state.draft.children);
     children[state.draft.currentChildIndex].schoolName = value;
     state = await moveForward(telegramId, state, {
-      step: "order_label_color",
+      step: "order_type",
       draft: { ...state.draft, children },
     });
   } else if (state.step === "order_label_color") {
@@ -1616,8 +1620,9 @@ async function handleOrderMessage(bot, msg, text, role) {
         details: {},
       };
       state = await moveForward(telegramId, state, {
-        step: "order_post_add",
-        draft: { ...state.draft, lines: [...state.draft.lines, line] },
+        step: row.requires_label_color ? "order_line_label_color" : "order_post_add",
+        pendingLine: row.requires_label_color ? line : null,
+        draft: row.requires_label_color ? state.draft : { ...state.draft, lines: [...state.draft.lines, line] },
         listType: null,
         query: "",
         page: 0,
@@ -1632,6 +1637,7 @@ async function handleOrderMessage(bot, msg, text, role) {
           price: Number(row.price),
           minQuantity: row.min_quantity,
           maxQuantity: row.max_quantity,
+          requiresLabelColor: row.requires_label_color,
         },
       });
     } else {
@@ -1770,10 +1776,27 @@ async function handleOrderMessage(bot, msg, text, role) {
       details: {},
     };
     state = await moveForward(telegramId, state, {
-      step: "order_post_add",
+      step: item.requiresLabelColor ? "order_line_label_color" : "order_post_add",
       pendingItem: null,
-      draft: { ...state.draft, lines: [...state.draft.lines, line] },
+      pendingLine: item.requiresLabelColor ? line : null,
+      draft: item.requiresLabelColor ? state.draft : { ...state.draft, lines: [...state.draft.lines, line] },
     });
+  } else if (state.step === "order_line_label_color") {
+    if (text === "أبيض" || text === "أسود") {
+      const line = { ...state.pendingLine, details: { labelColor: text, [text === "أبيض" ? "whiteCount" : "blackCount"]: state.pendingLine.quantity } };
+      state = await moveForward(telegramId, state, { step: "order_post_add", pendingLine: null, draft: { ...state.draft, lines: [...state.draft.lines, line] } });
+    } else if (text === "الاثنين") state = await moveForward(telegramId, state, { step: "order_line_label_white_count" });
+    else { await promptForState(bot, msg, state); return true; }
+  } else if (state.step === "order_line_label_white_count") {
+    const white = Number(String(text).replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+    if (!Number.isSafeInteger(white) || white < 0 || white > state.pendingLine.quantity) { await bot.sendMessage(msg.chat.id, "اكتب عدداً صحيحاً لا يزيد عن الكمية المطلوبة."); return true; }
+    state = await moveForward(telegramId, state, { step: "order_line_label_black_count", labelWhiteCount: white });
+  } else if (state.step === "order_line_label_black_count") {
+    const black = Number(String(text).replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+    const white = Number(state.labelWhiteCount || 0);
+    if (!Number.isSafeInteger(black) || black < 0 || white + black > state.pendingLine.quantity) { await bot.sendMessage(msg.chat.id, "مجموع الأبيض والأسود لا يمكن أن يزيد عن الكمية المطلوبة."); return true; }
+    const line = { ...state.pendingLine, details: { labelColor: "الاثنين", whiteCount: white, blackCount: black } };
+    state = await moveForward(telegramId, state, { step: "order_post_add", pendingLine: null, labelWhiteCount: null, draft: { ...state.draft, lines: [...state.draft.lines, line] } });
   } else if (state.step === "order_post_add") {
     if (text === "التالي ➕")
       state = await moveForward(telegramId, state, { step: "order_type" });

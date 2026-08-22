@@ -7,6 +7,7 @@ const ITEM_NAME_HEADER = "اسم الصنف";
 const ITEM_PRICE_HEADER = "السعر";
 const MIN_QUANTITY_HEADER = "الحد الأدنى";
 const MAX_QUANTITY_HEADER = "الحد الأقصى";
+const LABEL_COLOR_HEADER = "يحتاج لون ليبل؟";
 const MAX_ITEM_ROWS = 1000;
 const MAX_ITEM_PRICE = 9_999_999_999.99;
 
@@ -63,6 +64,7 @@ async function buildItemsWorkbook(rows = []) {
     { header: ITEM_PRICE_HEADER, key: "price", width: 18 },
     { header: MIN_QUANTITY_HEADER, key: "minQuantity", width: 18 },
     { header: MAX_QUANTITY_HEADER, key: "maxQuantity", width: 18 },
+    { header: LABEL_COLOR_HEADER, key: "requiresLabelColor", width: 20 },
   ];
   for (const row of rows) {
     sheet.addRow({
@@ -70,6 +72,7 @@ async function buildItemsWorkbook(rows = []) {
       price: Number(row.price),
       minQuantity: row.min_quantity === null ? null : Number(row.min_quantity),
       maxQuantity: row.max_quantity === null ? null : Number(row.max_quantity),
+      requiresLabelColor: row.requires_label_color ? "نعم" : "",
     });
   }
   const header = sheet.getRow(1);
@@ -90,7 +93,7 @@ async function buildItemsWorkbook(rows = []) {
   sheet.getColumn(2).numFmt = "#,##0.00";
   sheet.getColumn(3).numFmt = "0";
   sheet.getColumn(4).numFmt = "0";
-  sheet.autoFilter = { from: "A1", to: "D1" };
+  sheet.autoFilter = { from: "A1", to: "E1" };
 
   for (let rowNumber = 2; rowNumber <= MAX_ITEM_ROWS + 1; rowNumber += 1) {
     sheet.getCell(rowNumber, 2).dataValidation = {
@@ -133,7 +136,7 @@ async function parseItemsWorkbook(buffer) {
     const rawMax = cellValue(sheet.getCell(rowNumber, 4));
     const hasPrice = rawPrice !== null && rawPrice !== undefined && String(rawPrice).trim() !== "";
     const hasMin = rawMin !== null && rawMin !== undefined && String(rawMin).trim() !== "";
-    const hasMax = rawMax !== null && rawMax !== undefined && String(rawMax).trim() !== "";
+    const rawLabel = normalizeName(sheet.getCell(rowNumber, 5).text); const hasMax = rawMax !== null && rawMax !== undefined && String(rawMax).trim() !== "";
     if (!itemName && !hasPrice && !hasMin && !hasMax) continue;
     if (!itemName) throw workbookError(`اسم الصنف مفقود في الصف ${rowNumber}.`);
     if (itemName.length > 200) throw workbookError(`اسم الصنف في الصف ${rowNumber} أطول من 200 حرف.`);
@@ -146,13 +149,14 @@ async function parseItemsWorkbook(buffer) {
     if (minQuantity !== null && maxQuantity !== null && minQuantity > maxQuantity) {
       throw workbookError(`الحد الأدنى أكبر من الحد الأقصى في الصف ${rowNumber}.`);
     }
-    rows.push({ itemName, price: parsePrice(rawPrice, rowNumber), minQuantity, maxQuantity });
+    if (rawLabel && !["نعم", "لا"].includes(rawLabel)) throw workbookError(`حقل «${LABEL_COLOR_HEADER}» في الصف ${rowNumber} يجب أن يكون نعم أو لا.`);
+    rows.push({ itemName, price: parsePrice(rawPrice, rowNumber), minQuantity, maxQuantity, requiresLabelColor: rawLabel === "نعم" });
     if (rows.length > MAX_ITEM_ROWS) throw workbookError(`الحد الأقصى هو ${MAX_ITEM_ROWS} صنف في الملف.`);
   }
   return rows;
 }
 
 module.exports = {
-  ITEM_NAME_HEADER, ITEM_PRICE_HEADER, MIN_QUANTITY_HEADER, MAX_QUANTITY_HEADER,
+  ITEM_NAME_HEADER, ITEM_PRICE_HEADER, MIN_QUANTITY_HEADER, MAX_QUANTITY_HEADER, LABEL_COLOR_HEADER,
   MAX_ITEM_ROWS, buildItemsWorkbook, parseItemsWorkbook,
 };

@@ -27,7 +27,7 @@ test("builds a reusable workbook containing current items", async () => {
     item_name: "ليبل ملابس", price: "85.00", min_quantity: 2, max_quantity: 20,
   }]);
   assert.deepEqual(await parseItemsWorkbook(buffer), [{
-    itemName: "ليبل ملابس", price: 85, minQuantity: 2, maxQuantity: 20,
+    itemName: "ليبل ملابس", price: 85, minQuantity: 2, maxQuantity: 20, requiresLabelColor: false,
   }]);
 });
 
@@ -35,7 +35,7 @@ test("accepts an empty item template and optional quantity limits", async () => 
   assert.deepEqual(await parseItemsWorkbook(await buildItemsWorkbook([])), []);
   const buffer = await workbookBuffer([["ميدالية شنطة", 30, "", ""]]);
   assert.deepEqual(await parseItemsWorkbook(buffer), [{
-    itemName: "ميدالية شنطة", price: 30, minQuantity: null, maxQuantity: null,
+    itemName: "ميدالية شنطة", price: 30, minQuantity: null, maxQuantity: null, requiresLabelColor: false,
   }]);
 });
 

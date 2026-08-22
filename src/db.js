@@ -171,6 +171,10 @@ async function testConnection() {
       add column if not exists advance_payment_details text
   `);
   await pool.query(`
+    alter table public.catalog_items add column if not exists requires_label_color boolean not null default false;
+    alter table public.packages add column if not exists requires_label_color boolean not null default false;
+  `);
+  await pool.query(`
     do $$ begin
       if not exists (select 1 from pg_constraint where conname = 'sales_orders_parent_phone_2_format') then
         alter table public.sales_orders add constraint sales_orders_parent_phone_2_format check (parent_phone_2 is null or parent_phone_2 ~ '^[0-9]{7,15}$');
@@ -216,7 +220,7 @@ async function testConnection() {
 
 async function listItems() {
   const result = await pool.query(`
-    select id, item_name, price::text as price, min_quantity, max_quantity
+    select id, item_name, price::text as price, min_quantity, max_quantity, requires_label_color
     from public.catalog_items
     order by id asc
   `);
@@ -228,7 +232,7 @@ function searchPattern(query) { return `%${String(query || "").trim()}%`; }
 async function searchItems(query, page = 0, pageSize = 8) {
   const term = String(query || "").trim();
   const result = await pool.query(`
-    select id, item_name, price::text as price, min_quantity, max_quantity,
+    select id, item_name, price::text as price, min_quantity, max_quantity, requires_label_color,
            count(*) over()::int as total_count
     from public.catalog_items
     where $1 = '' or item_name ilike $2
@@ -248,14 +252,13 @@ async function replaceItems(rows, actorTelegramId) {
     await client.query("delete from public.catalog_items");
     await client.query(`
       insert into public.catalog_items
-        (item_name, price, min_quantity, max_quantity, uploaded_by)
-      select imported.item_name, imported.price, imported.min_quantity,
-             imported.max_quantity, $5
-      from unnest($1::text[], $2::numeric[], $3::integer[], $4::integer[])
-        as imported(item_name, price, min_quantity, max_quantity)
+        (item_name, price, min_quantity, max_quantity, requires_label_color, uploaded_by)
+      select imported.item_name, imported.price, imported.min_quantity, imported.max_quantity, imported.requires_label_color, $6
+      from unnest($1::text[], $2::numeric[], $3::integer[], $4::integer[], $5::boolean[])
+        as imported(item_name, price, min_quantity, max_quantity, requires_label_color)
     `, [
       rows.map((row) => row.itemName), rows.map((row) => String(row.price)),
-      rows.map((row) => row.minQuantity), rows.map((row) => row.maxQuantity),
+      rows.map((row) => row.minQuantity), rows.map((row) => row.maxQuantity), rows.map((row) => Boolean(row.requiresLabelColor)),
       String(actorTelegramId),
     ]);
     await client.query("commit");
@@ -270,7 +273,7 @@ async function replaceItems(rows, actorTelegramId) {
 
 async function listPackages() {
   const result = await pool.query(`
-    select p.id, p.package_name, p.total_price::text as total_price,
+    select p.id, p.package_name, p.total_price::text as total_price, p.requires_label_color,
            coalesce(json_agg(json_build_object(
              'item_name', pi.item_name,
              'quantity', pi.quantity
@@ -287,7 +290,7 @@ async function searchPackages(query, page = 0, pageSize = 8) {
   const term = String(query || "").trim();
   const result = await pool.query(`
     with matching as (
-      select p.id, p.package_name, p.total_price,
+      select p.id, p.package_name, p.total_price, p.requires_label_color,
              count(*) over()::int as total_count,
              case when lower(p.package_name) = lower($1) then 0 when lower(p.package_name) like lower($1) || '%' then 1 else 2 end as rank
       from public.packages p
@@ -296,11 +299,11 @@ async function searchPackages(query, page = 0, pageSize = 8) {
       order by rank, p.package_name asc
       limit $3 offset $4
     )
-    select m.id, m.package_name, m.total_price::text as total_price, m.total_count,
+    select m.id, m.package_name, m.total_price::text as total_price, m.requires_label_color, m.total_count,
            coalesce(json_agg(json_build_object('item_name', pi.item_name, 'quantity', pi.quantity) order by pi.position) filter (where pi.id is not null), '[]'::json) as items
     from matching m
     left join public.package_items pi on pi.package_id = m.id
-    group by m.id, m.package_name, m.total_price, m.total_count, m.rank
+    group by m.id, m.package_name, m.total_price, m.requires_label_color, m.total_count, m.rank
     order by m.rank, m.package_name asc
   `, [term, searchPattern(term), pageSize, page * pageSize]);
   return { entries: result.rows, total: result.rows[0]?.total_count || 0 };
