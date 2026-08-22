@@ -321,10 +321,10 @@ async function replacePackages(packages, actorTelegramId) {
     await client.query("select pg_advisory_xact_lock(hashtext('sales_bot_packages_replace'))");
     await client.query("delete from public.packages");
     await client.query(`
-      insert into public.packages (package_name, total_price, uploaded_by)
-      select imported.package_name, imported.total_price, $3
-      from unnest($1::text[], $2::numeric[]) as imported(package_name, total_price)
-    `, [packages.map((row) => row.packageName), packages.map((row) => String(row.totalPrice)), String(actorTelegramId)]);
+      insert into public.packages (package_name, total_price, requires_label_color, uploaded_by)
+      select imported.package_name, imported.total_price, imported.requires_label_color, $4
+      from unnest($1::text[], $2::numeric[], $3::boolean[]) as imported(package_name, total_price, requires_label_color)
+    `, [packages.map((row) => row.packageName), packages.map((row) => String(row.totalPrice)), packages.map((row) => Boolean(row.requiresLabelColor)), String(actorTelegramId)]);
     await client.query(`
       insert into public.package_items (package_id, item_name, quantity, position)
       select p.id, imported.item_name, imported.quantity, imported.position

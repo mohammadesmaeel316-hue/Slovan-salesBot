@@ -7,6 +7,7 @@ const PACKAGE_NAME_HEADER = "اسم الباكدج";
 const PACKAGE_ITEM_HEADER = "الصنف";
 const PACKAGE_QUANTITY_HEADER = "الكمية";
 const PACKAGE_PRICE_HEADER = "السعر الإجمالي";
+const LABEL_COLOR_HEADER = "يحتاج لون ليبل؟";
 const MAX_PACKAGE_ROWS = 1000;
 const MAX_PACKAGE_PRICE = 9_999_999_999.99;
 
@@ -60,6 +61,7 @@ async function buildPackagesWorkbook(packages = []) {
     { header: PACKAGE_ITEM_HEADER, key: "itemName", width: 30 },
     { header: PACKAGE_QUANTITY_HEADER, key: "quantity", width: 12 },
     { header: PACKAGE_PRICE_HEADER, key: "totalPrice", width: 20 },
+    { header: LABEL_COLOR_HEADER, key: "requiresLabelColor", width: 20 },
   ];
   for (const packageRow of packages) {
     packageRow.items.forEach((item, index) => sheet.addRow({
@@ -67,6 +69,7 @@ async function buildPackagesWorkbook(packages = []) {
       itemName: item.item_name,
       quantity: item.quantity,
       totalPrice: index === 0 ? Number(packageRow.total_price) : null,
+      requiresLabelColor: index === 0 && packageRow.requires_label_color ? "نعم" : null,
     }));
   }
   const header = sheet.getRow(1);
@@ -85,13 +88,13 @@ async function buildPackagesWorkbook(packages = []) {
     sheet.getCell(row, 1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFCCFBF1" } };
     sheet.getCell(row, 3).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
     sheet.getCell(row, 4).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
-    for (let column = 1; column <= 4; column += 1) {
+    for (let column = 1; column <= 5; column += 1) {
       sheet.getCell(row, column).border = { top: { style: "thin", color: { argb: "FFB8C9D1" } }, bottom: { style: "thin", color: { argb: "FFB8C9D1" } }, left: { style: "thin", color: { argb: "FFB8C9D1" } }, right: { style: "thin", color: { argb: "FFB8C9D1" } } };
     }
     sheet.getCell(row, 3).dataValidation = { type: "whole", operator: "greaterThan", allowBlank: true, showErrorMessage: true, errorTitle: "كمية غير صحيحة", error: "أدخل عدداً صحيحاً أكبر من صفر.", formulae: [0] };
     sheet.getCell(row, 4).dataValidation = { type: "decimal", operator: "greaterThanOrEqual", allowBlank: true, showErrorMessage: true, errorTitle: "سعر غير صحيح", error: "أدخل سعراً يساوي صفراً أو أكبر.", formulae: [0] };
   }
-  sheet.autoFilter = { from: "A1", to: "D1" };
+  sheet.autoFilter = { from: "A1", to: "E1" };
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
@@ -113,6 +116,7 @@ async function parsePackagesWorkbook(buffer) {
     const itemName = normalizeName(sheet.getCell(rowNumber, 2).text);
     const rawQuantity = cellValue(sheet.getCell(rowNumber, 3));
     const rawPrice = cellValue(sheet.getCell(rowNumber, 4));
+    const rawLabel = normalizeName(sheet.getCell(rowNumber, 5).text);
     const hasQuantity = rawQuantity !== null && rawQuantity !== undefined && String(rawQuantity).trim() !== "";
     const hasPrice = rawPrice !== null && rawPrice !== undefined && String(rawPrice).trim() !== "";
     if (!packageName && !itemName && !hasQuantity && !hasPrice) continue;
@@ -125,11 +129,13 @@ async function parsePackagesWorkbook(buffer) {
       if (!hasPrice) throw workbookError(`السعر الإجمالي للباكدج «${packageName}» مفقود في الصف ${rowNumber}.`);
       if (packageName.length > 200) throw workbookError(`اسم الباكدج في الصف ${rowNumber} أطول من 200 حرف.`);
       packageNames.add(key);
-      current = { packageName, totalPrice: parsePrice(rawPrice, rowNumber), items: [], itemNames: new Set() };
+      if (rawLabel && !["نعم", "لا"].includes(rawLabel)) throw workbookError(`حقل «${LABEL_COLOR_HEADER}» في الصف ${rowNumber} يجب أن يكون نعم أو لا.`);
+      current = { packageName, totalPrice: parsePrice(rawPrice, rowNumber), requiresLabelColor: rawLabel === "نعم", items: [], itemNames: new Set() };
       packages.push(current);
     } else {
       if (!current) throw workbookError(`اسم الباكدج مفقود في الصف ${rowNumber}.`);
       if (hasPrice) throw workbookError(`اكتب السعر الإجمالي في أول صف للباكدج فقط. الخطأ في الصف ${rowNumber}.`);
+      if (rawLabel) throw workbookError(`اكتب «${LABEL_COLOR_HEADER}» في أول صف للباكدج فقط. الخطأ في الصف ${rowNumber}.`);
     }
     if (!itemName) throw workbookError(`اسم الصنف مفقود في الصف ${rowNumber}.`);
     if (!hasQuantity) throw workbookError(`الكمية مفقودة في الصف ${rowNumber}.`);
@@ -142,4 +148,4 @@ async function parsePackagesWorkbook(buffer) {
   return packages.map(({ itemNames, ...packageRow }) => packageRow);
 }
 
-module.exports = { PACKAGE_NAME_HEADER, PACKAGE_ITEM_HEADER, PACKAGE_QUANTITY_HEADER, PACKAGE_PRICE_HEADER, MAX_PACKAGE_ROWS, buildPackagesWorkbook, parsePackagesWorkbook };
+module.exports = { PACKAGE_NAME_HEADER, PACKAGE_ITEM_HEADER, PACKAGE_QUANTITY_HEADER, PACKAGE_PRICE_HEADER, LABEL_COLOR_HEADER, MAX_PACKAGE_ROWS, buildPackagesWorkbook, parsePackagesWorkbook };
