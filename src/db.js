@@ -378,7 +378,7 @@ async function saveOrder(draft, actorTelegramId) {
       returning id, position
     `, [order.id, draft.children.map((_, i) => i + 1), draft.children.map(c => c.childName),
       draft.children.map(c => c.cartoonCharacter), draft.children.map(c => c.schoolName),
-      draft.children.map(c => c.labelColor)]);
+      draft.children.map(c => c.labelColor || "غير محدد")]);
     const childIds = new Map(childResult.rows.map(row => [row.position, row.id]));
     await client.query(`
       insert into public.order_lines (
