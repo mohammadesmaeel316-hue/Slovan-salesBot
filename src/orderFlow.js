@@ -933,7 +933,13 @@ function draftGrandTotal(draft) {
 
 async function finishNewOrder(bot, msg, draft, telegramId) {
   if (!draft.skipDuplicateCheck) {
-    const duplicates = await findRecentDuplicateOrders(draft);
+    let duplicates = [];
+    try {
+      duplicates = await findRecentDuplicateOrders(draft);
+    } catch (error) {
+      // A warning must never prevent a valid order from being saved.
+      console.error("Duplicate-order check failed:", error);
+    }
     if (duplicates.length) {
       const current = await getConversationState(telegramId);
       await setConversationState(telegramId, {
