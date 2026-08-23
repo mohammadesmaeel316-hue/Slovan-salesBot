@@ -135,7 +135,8 @@ async function parsePackagesWorkbook(buffer) {
     } else {
       if (!current) throw workbookError(`اسم الباكدج مفقود في الصف ${rowNumber}.`);
       if (hasPrice) throw workbookError(`اكتب السعر الإجمالي في أول صف للباكدج فقط. الخطأ في الصف ${rowNumber}.`);
-      if (rawLabel) throw workbookError(`اكتب «${LABEL_COLOR_HEADER}» في أول صف للباكدج فقط. الخطأ في الصف ${rowNumber}.`);
+      if (rawLabel && !["نعم", "لا"].includes(rawLabel)) throw workbookError(`حقل «${LABEL_COLOR_HEADER}» في الصف ${rowNumber} يجب أن يكون نعم أو لا.`);
+      if (rawLabel === "نعم") current.requiresLabelColor = true;
     }
     if (!itemName) throw workbookError(`اسم الصنف مفقود في الصف ${rowNumber}.`);
     if (!hasQuantity) throw workbookError(`الكمية مفقودة في الصف ${rowNumber}.`);

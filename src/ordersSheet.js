@@ -11,7 +11,7 @@ const SUMMARY_HEADERS = [
 
 const DETAIL_HEADERS = [
   "رقم الأوردر", "الحالة", "مصدر الأوردر", "اسم ولي الأمر", "رقم الموبايل", "موبايل ٢", "موبايل ٣",
-  "اسم الطفل", "الشخصية", "المدرسة", "لون الليبل", "نوع الطلب", "الصنف / الباكدج",
+  "اسم الطفل", "الشخصية", "المدرسة", "المرحلة الدراسية", "لون الليبل", "نوع الطلب", "الصنف / الباكدج",
   "الكمية", "سعر الوحدة", "إجمالي السطر", "نوع الخصم", "قيمة الخصم", "قيمة الخصم الفعلية", "اسم منشئ الأوردر", "Telegram ID المنشئ",
   "هاتف المنشئ", "العنوان", "ملاحظات", "منطقة الشحن", "سعر الشحن", "إجمالي الأوردر", "الدفعة المقدمة", "تفاصيل الدفعة", "المتبقي", "تاريخ الإنشاء", "آخر تعديل",
 ];
@@ -94,23 +94,23 @@ async function buildOrdersWorkbook(rows = []) {
   styleSheet(summarySheet, [25, 26], [12, 14, 15, 16, 17, 18, 20]);
 
   const detailsSheet = createSheet(workbook, "تفاصيل الطلبات", DETAIL_HEADERS,
-    [22, 14, 16, 24, 18, 16, 16, 24, 20, 24, 18, 14, 28, 12, 15, 16, 15, 14, 17, 24, 18, 18, 24, 28, 22, 15, 16, 16, 24, 16, 20, 20]);
+    [22, 14, 16, 24, 18, 16, 16, 24, 20, 24, 18, 18, 14, 28, 12, 15, 16, 15, 14, 17, 24, 18, 18, 24, 28, 22, 15, 16, 16, 24, 16, 20, 20]);
   for (const row of rows) {
     detailsSheet.addRow({
       column1: row.order_code || "", column2: row.status === "cancelled" ? "ملغي" : "مؤكد", column3: row.source || "",
       column4: row.parent_name || "", column5: row.parent_phone || "", column6: row.parent_phone_2 || "", column7: row.parent_phone_3 || "",
-      column8: row.child_name || "", column9: row.cartoon_character || "", column10: row.school_name || "", column11: row.clothing_label_color || "",
-      column12: row.line_type === "package" ? "باكدج" : row.line_type === "item" ? "صنف عادي" : "", column13: row.description || "",
-      column14: numeric(row.quantity), column15: numeric(row.unit_price), column16: numeric(row.line_total), column17: discountLabel(row.discount_type),
-      column18: numeric(row.discount_value), column19: numeric(row.discount_amount), column20: row.creator_name || "غير مسجل",
-      column21: row.created_by || "", column22: row.creator_phone || "", column23: row.address || "", column24: row.notes || "",
-      column25: row.delivery_area || "", column26: numeric(row.shipping_price), column27: numeric(row.grand_total),
-      column28: numeric(row.advance_payment), column29: row.advance_payment_details || "",
-      column30: Math.max(0, Number(row.grand_total || 0) - Number(row.advance_payment || 0)),
-      column31: formatDate(row.created_at), column32: formatDate(row.updated_at),
+      column8: row.child_name || "", column9: row.cartoon_character || "", column10: row.school_name || "", column11: row.school_stage || "", column12: row.clothing_label_color || "",
+      column13: row.line_type === "package" ? "باكدج" : row.line_type === "item" ? "صنف عادي" : "", column14: row.description || "",
+      column15: numeric(row.quantity), column16: numeric(row.unit_price), column17: numeric(row.line_total), column18: discountLabel(row.discount_type),
+      column19: numeric(row.discount_value), column20: numeric(row.discount_amount), column21: row.creator_name || "غير مسجل",
+      column22: row.created_by || "", column23: row.creator_phone || "", column24: row.address || "", column25: row.notes || "",
+      column26: row.delivery_area || "", column27: numeric(row.shipping_price), column28: numeric(row.grand_total),
+      column29: numeric(row.advance_payment), column30: row.advance_payment_details || "",
+      column31: Math.max(0, Number(row.grand_total || 0) - Number(row.advance_payment || 0)),
+      column32: formatDate(row.created_at), column33: formatDate(row.updated_at),
     });
   }
-  styleSheet(detailsSheet, [31, 32], [15, 16, 18, 19, 26, 27, 28, 30]);
+  styleSheet(detailsSheet, [32, 33], [16, 17, 19, 20, 27, 28, 29, 31]);
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

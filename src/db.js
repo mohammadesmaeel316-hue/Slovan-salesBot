@@ -86,8 +86,8 @@ async function findRecentDuplicateOrders(draft) {
     select order_code, parent_name, grand_total::text as grand_total, created_at,
            source, parent_phone, parent_phone_2, parent_phone_3, address, delivery_area,
            discount_type, discount_value::text as discount_value,
-           (select jsonb_agg(jsonb_build_object('name', c.child_name, 'character', c.cartoon_character, 'school', c.school_name, 'color', c.clothing_label_color) order by c.position)
-              from public.order_children c where c.order_id=o.id) as children,
+            (select jsonb_agg(jsonb_build_object('name', c.child_name, 'character', c.cartoon_character, 'school', c.school_name, 'stage', c.school_stage, 'color', c.clothing_label_color) order by c.position)
+               from public.order_children c where c.order_id=o.id) as children,
            (select jsonb_agg(jsonb_build_object('type', l.line_type, 'description', l.description, 'quantity', l.quantity, 'unit_price', l.unit_price, 'line_total', l.line_total, 'child_id', l.child_id) order by l.position)
               from public.order_lines l where l.order_id=o.id) as lines
     from public.sales_orders o
@@ -96,7 +96,7 @@ async function findRecentDuplicateOrders(draft) {
       and o.parent_name=$2 and o.grand_total=$3
     order by o.created_at desc limit 5
   `, [phone, draft.parentName, total]);
-  const draftChildren = (draft.children || []).map(c => ({ name: c.childName, character: c.cartoonCharacter, school: c.schoolName, color: c.labelColor }));
+  const draftChildren = (draft.children || []).map(c => ({ name: c.childName, character: c.cartoonCharacter, school: c.schoolName, stage: c.schoolStage || "", color: c.labelColor }));
   const draftLines = (draft.lines || []).map(l => ({ type: l.type, description: l.description, quantity: Number(l.quantity), unit_price: Number(l.unitPrice), line_total: Number(l.lineTotal), child_index: Number(l.childIndex) }));
   return result.rows.filter(row => {
     const children = row.children || [];
@@ -174,6 +174,7 @@ async function testConnection() {
     alter table public.catalog_items add column if not exists requires_label_color boolean not null default false;
     alter table public.packages add column if not exists requires_label_color boolean not null default false;
   `);
+  await pool.query(`alter table public.order_children add column if not exists school_stage text not null default ''`);
   await pool.query(`
     do $$ begin
       if not exists (select 1 from pg_constraint where conname = 'sales_orders_parent_phone_2_format') then
@@ -370,15 +371,15 @@ async function saveOrder(draft, actorTelegramId) {
 
     const childResult = await client.query(`
       insert into public.order_children (
-        order_id, position, child_name, cartoon_character, school_name, clothing_label_color
+        order_id, position, child_name, cartoon_character, school_name, school_stage, clothing_label_color
       ) select $1, imported.position, imported.child_name, imported.cartoon_character,
-               imported.school_name, imported.clothing_label_color
-      from unnest($2::integer[], $3::text[], $4::text[], $5::text[], $6::text[])
-        as imported(position, child_name, cartoon_character, school_name, clothing_label_color)
+               imported.school_name, imported.school_stage, imported.clothing_label_color
+      from unnest($2::integer[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
+        as imported(position, child_name, cartoon_character, school_name, school_stage, clothing_label_color)
       returning id, position
     `, [order.id, draft.children.map((_, i) => i + 1), draft.children.map(c => c.childName),
       draft.children.map(c => c.cartoonCharacter), draft.children.map(c => c.schoolName),
-      draft.children.map(c => c.labelColor || "غير محدد")]);
+      draft.children.map(c => c.schoolStage || ""), draft.children.map(c => c.labelColor || "غير محدد")]);
     const childIds = new Map(childResult.rows.map(row => [row.position, row.id]));
     await client.query(`
       insert into public.order_lines (
@@ -426,8 +427,8 @@ async function listOrdersForExport() {
            o.created_at, o.updated_at, o.created_by,
            creator.display_name as creator_name,
            creator.phone as creator_phone,
-           c.position as child_position, c.child_name,
-           c.cartoon_character, c.school_name, c.clothing_label_color,
+            c.position as child_position, c.child_name,
+            c.cartoon_character, c.school_name, c.school_stage, c.clothing_label_color,
            l.position as line_position, l.line_type, l.description,
            l.quantity, l.unit_price::text as unit_price,
            l.line_total::text as line_total
@@ -512,7 +513,7 @@ async function updateOrderDelivery(orderCode, delivery, actorTelegramId) {
 }
 
 async function updateOrderChild(orderCode, childId, field, value, actorTelegramId) {
-  const columns = { childName: "child_name", cartoonCharacter: "cartoon_character", schoolName: "school_name", labelColor: "clothing_label_color" };
+  const columns = { childName: "child_name", cartoonCharacter: "cartoon_character", schoolName: "school_name", schoolStage: "school_stage", labelColor: "clothing_label_color" };
   const column = columns[field];
   if (!column) throw new Error("Unsupported child field.");
   const result = await pool.query(`
@@ -530,14 +531,14 @@ async function addOrderChild(orderCode, child, actorTelegramId) {
   try {
     await client.query("begin");
     const result = await client.query(`
-      insert into public.order_children (order_id, position, child_name, cartoon_character, school_name, clothing_label_color)
+      insert into public.order_children (order_id, position, child_name, cartoon_character, school_name, school_stage, clothing_label_color)
       select o.id, (select min(slot) from generate_series(1,6) as slot
-                    where not exists (select 1 from public.order_children c2 where c2.order_id=o.id and c2.position=slot)), $2,$3,$4,$5
+                    where not exists (select 1 from public.order_children c2 where c2.order_id=o.id and c2.position=slot)), $2,$3,$4,$5,$6
       from public.sales_orders o
       where upper(o.order_code)=upper($1) and o.status='confirmed'
         and (select count(*) from public.order_children where order_id=o.id) < 6
       returning id
-    `, [String(orderCode), child.childName, child.cartoonCharacter, child.schoolName, child.labelColor]);
+    `, [String(orderCode), child.childName, child.cartoonCharacter, child.schoolName, child.schoolStage || "", child.labelColor]);
     if (result.rows.length) await client.query(`update public.sales_orders set updated_by=$2, updated_at=now() where upper(order_code)=upper($1)`, [String(orderCode), String(actorTelegramId)]);
     await client.query("commit"); return result.rows[0] || null;
   } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }

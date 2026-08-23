@@ -213,6 +213,7 @@ create table if not exists public.order_children (
   child_name text not null,
   cartoon_character text not null,
   school_name text not null,
+  school_stage text not null default '',
   clothing_label_color text not null,
   constraint order_children_position_range check (position between 1 and 6),
   constraint order_children_name_not_blank check (btrim(child_name) <> ''),

@@ -45,6 +45,7 @@ const ORDER_STEPS = new Set([
   "order_parent_phone_3",
   "order_cartoon",
   "order_school",
+  "order_stage",
   "order_label_color", "order_line_label_color", "order_line_label_white_count", "order_line_label_black_count",
   "order_custom_label_color",
   "order_type",
@@ -83,6 +84,7 @@ const ORDER_STEPS = new Set([
   "edit_add_child_name",
   "edit_add_child_cartoon",
   "edit_add_child_school",
+  "edit_add_child_stage",
   "edit_add_child_color",
   "edit_add_select_child",
   "edit_add_type",
@@ -216,8 +218,8 @@ function childEditKeyboard() {
   return keyboard(
     [
       [{ text: "تعديل اسم الطفل" }, { text: "تعديل الشخصية" }],
-      [{ text: "تعديل المدرسة" }, { text: "تعديل لون الليبل" }],
-      [{ text: "حذف الطفل" }],
+      [{ text: "تعديل المدرسة" }, { text: "تعديل المرحلة الدراسية" }],
+      [{ text: "تعديل لون الليبل" }, { text: "حذف الطفل" }],
       [{ text: "العودة لبيانات الأوردر" }],
     ],
     "اختر التعديل المطلوب",
@@ -516,6 +518,7 @@ async function promptForState(bot, msg, state) {
       textKeyboard("الشخصية الكرتونية"),
     ],
     order_school: ["اكتب اسم المدرسة:", textKeyboard("اسم المدرسة")],
+    order_stage: ["اكتب المرحلة الدراسية:", textKeyboard("المرحلة الدراسية")],
     order_label_color: ["اختر لون ليبل الملابس:", labelKeyboard()],
     order_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard()],
     order_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.pendingLine?.quantity || 1}`, textKeyboard("عدد الأبيض")],
@@ -617,6 +620,10 @@ async function promptForState(bot, msg, state) {
       "اكتب مدرسة الطفل الجديد:",
       textKeyboard("المدرسة"),
     ],
+    edit_add_child_stage: [
+      "اكتب المرحلة الدراسية للطفل الجديد:",
+      textKeyboard("المرحلة الدراسية"),
+    ],
     edit_add_child_color: [
       "اكتب لون ليبل الملابس للطفل الجديد:",
       textKeyboard("لون الليبل"),
@@ -717,6 +724,7 @@ function orderSummary(draft, orderCode) {
       `🌝 اسم الطفل : ${child.childName}`,
       `🧸 الشخصيه : ${child.cartoonCharacter}`,
       `📌 المدرسة :- ${child.schoolName}`,
+      `📚 المرحلة الدراسية : ${child.schoolStage || "غير محدد"}`,
     );
 
     if (child.labelColor !== "غير محدد") {
@@ -832,6 +840,7 @@ function savedOrderSummary(order) {
       `🌝 اسم الطفل : ${child.child_name}`,
       `🧸 الشخصيه : ${child.cartoon_character}`,
       `📌 المدرسة :- ${child.school_name}`,
+      `📚 المرحلة الدراسية : ${child.school_stage || "غير محدد"}`,
     );
 
     if (child.clothing_label_color !== "غير محدد") {
@@ -963,7 +972,54 @@ async function finishNewOrder(bot, msg, draft, telegramId) {
       return false;
     }
   }
-  const saved = await saveOrder(draft, telegramId);
+  // Retry once for transient pool/network blips; keep draft on failure so user can retry.
+  let saved = null;
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      saved = await saveOrder(draft, telegramId);
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error;
+      const isTransient = /timeout|ECONN|terminat|Pool|connection|ETIMEDOUT/i.test(error.message || "");
+      console.error(`saveOrder attempt ${attempt + 1} failed:`, error.message, error.stack);
+      if (attempt === 0 && isTransient) {
+        await new Promise((r) => setTimeout(r, 600));
+        continue;
+      }
+      break;
+    }
+  }
+  if (lastError) {
+    console.error("saveOrder failed final:", {
+      error: lastError.message,
+      stack: lastError.stack,
+      draftPreview: JSON.stringify(draft).slice(0, 2000),
+    });
+    // Preserve conversation so user does not lose the whole order - they can press the same button again.
+    try {
+      const current = await getConversationState(telegramId);
+      await setConversationState(telegramId, {
+        ...(current || { step: "order_advance_choice", draft, history: [] }),
+        step: "order_advance_choice",
+        draft,
+        saveError: true,
+      });
+    } catch {}
+    await bot.sendMessage(
+      msg.chat.id,
+      "تعذر حفظ الأوردر لخلل مؤقت في الاتصال. اضغط نفس الزر مرة أخرى (مثلاً «لا، لم يدفع») أو «رجوع خطوة» للمحاولة مجدداً. موضعك محفوظ.",
+      keyboard(
+        [
+          [{ text: "لا، لم يدفع" }, { text: "نعم، تم الدفع" }],
+          [{ text: "رجوع خطوة" }, { text: "إلغاء الطلب" }],
+        ],
+        "أعد المحاولة",
+      ),
+    );
+    return false;
+  }
   await clearConversationState(telegramId);
   await bot.sendMessage(
     msg.chat.id,
@@ -1031,6 +1087,7 @@ async function cancelOrder(bot, msg) {
 async function handleOrderMessage(bot, msg, text, role) {
   if (role === "none") return false;
   const telegramId = msg.from.id;
+  try {
   if (/^الطلبات$/i.test(text)) {
     await clearConversationState(telegramId);
     await bot.sendMessage(msg.chat.id, "إدارة الطلبات:", orderMenuKeyboard());
@@ -1415,7 +1472,7 @@ async function handleOrderMessage(bot, msg, text, role) {
     }
     const children = [
       ...state.draft.children,
-      { childName, cartoonCharacter: null, schoolName: null, labelColor: null },
+      { childName, cartoonCharacter: null, schoolName: null, schoolStage: null, labelColor: null },
     ];
     const draft = {
       ...state.draft,
@@ -1533,6 +1590,15 @@ async function handleOrderMessage(bot, msg, text, role) {
     if (!value) return true;
     const children = clone(state.draft.children);
     children[state.draft.currentChildIndex].schoolName = value;
+    state = await moveForward(telegramId, state, {
+      step: "order_stage",
+      draft: { ...state.draft, children },
+    });
+  } else if (state.step === "order_stage") {
+    const value = normalizeName(text);
+    if (!value) return true;
+    const children = clone(state.draft.children);
+    children[state.draft.currentChildIndex].schoolStage = value;
     state = await moveForward(telegramId, state, {
       step: "order_type",
       draft: { ...state.draft, children },
@@ -2194,6 +2260,7 @@ async function handleOrderMessage(bot, msg, text, role) {
       "تعديل اسم الطفل": "childName",
       "تعديل الشخصية": "cartoonCharacter",
       "تعديل المدرسة": "schoolName",
+      "تعديل المرحلة الدراسية": "schoolStage",
       "تعديل لون الليبل": "labelColor",
     };
     if (fields[text]) {
@@ -2469,8 +2536,17 @@ async function handleOrderMessage(bot, msg, text, role) {
     const value = normalizeName(text);
     if (!value) return true;
     state = await moveForward(telegramId, state, {
-      step: "edit_add_child_color",
+      step: "edit_add_child_stage",
       editNewChild: { ...state.editNewChild, schoolName: value },
+    });
+    await promptForState(bot, msg, state);
+    return true;
+  } else if (state.step === "edit_add_child_stage") {
+    const value = normalizeName(text);
+    if (!value) return true;
+    state = await moveForward(telegramId, state, {
+      step: "edit_add_child_color",
+      editNewChild: { ...state.editNewChild, schoolStage: value },
     });
     await promptForState(bot, msg, state);
     return true;
@@ -2687,6 +2763,28 @@ async function handleOrderMessage(bot, msg, text, role) {
 
   await promptForState(bot, msg, state);
   return true;
+  } catch (error) {
+    console.error("handleOrderMessage failed:", {
+      step: typeof state !== "undefined" ? state?.step : "before_state",
+      editOrderCode: typeof state !== "undefined" ? state?.editOrderCode : undefined,
+      text: String(text).slice(0, 120),
+      error: error.message,
+      stack: error.stack,
+    });
+    const isTransient = /timeout|ECONN|terminat|Pool|connection|ETIMEDOUT|deadlock|Rate/i.test(error.message || "");
+    try {
+      await bot.sendMessage(
+        msg.chat.id,
+        isTransient
+          ? "تعذر تنفيذ العملية لخلل مؤقت في الاتصال. موضعك محفوظ — اضغط نفس الزر أو «رجوع خطوة» للمحاولة مجدداً."
+          : "تعذر تنفيذ العملية حالياً. موضعك محفوظ — حاول مرة أخرى أو اضغط «رجوع خطوة».",
+        state?.draft || state?.editOrderCode
+          ? keyboard([[{ text: "رجوع خطوة" }, { text: "إلغاء الطلب" }]], "أعد المحاولة")
+          : orderMenuKeyboard(),
+      );
+    } catch {}
+    return true;
+  }
 }
 
 module.exports = {
