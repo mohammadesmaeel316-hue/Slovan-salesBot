@@ -96,7 +96,7 @@ async function findRecentDuplicateOrders(draft) {
       and o.parent_name=$2 and o.grand_total=$3
     order by o.created_at desc limit 5
   `, [phone, draft.parentName, total]);
-  const draftChildren = (draft.children || []).map(c => ({ name: c.childName, character: c.cartoonCharacter, school: c.schoolName, stage: c.schoolStage || "", color: c.labelColor }));
+  const draftChildren = (draft.children || []).map(c => ({ name: c.childName, character: c.cartoonCharacter, school: c.schoolName, stage: c.schoolStage || "", color: c.labelColor || "غير محدد" }));
   const draftLines = (draft.lines || []).map(l => ({ type: l.type, description: l.description, quantity: Number(l.quantity), unit_price: Number(l.unitPrice), line_total: Number(l.lineTotal), child_index: Number(l.childIndex) }));
   return result.rows.filter(row => {
     const children = row.children || [];

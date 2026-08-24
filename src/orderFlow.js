@@ -50,8 +50,7 @@ const ORDER_STEPS = new Set([
   "order_cartoon",
   "order_school",
   "order_stage",
-  "order_label_color", "order_line_label_color", "order_line_label_white_count", "order_line_label_black_count",
-  "order_custom_label_color",
+  "order_line_label_color", "order_line_label_white_count", "order_line_label_black_count",
   "order_type",
   "order_list",
   "order_search",
@@ -90,12 +89,12 @@ const ORDER_STEPS = new Set([
   "edit_add_child_cartoon",
   "edit_add_child_school",
   "edit_add_child_stage",
-  "edit_add_child_color",
   "edit_add_select_child",
   "edit_add_type",
   "edit_add_list",
   "edit_add_search",
   "edit_add_quantity",
+  "edit_add_line_label_color", "edit_add_line_label_white_count", "edit_add_line_label_black_count",
   "edit_delivery_list",
   "edit_delivery_search",
   "edit_cancel_confirm",
@@ -224,8 +223,7 @@ function childEditKeyboard() {
     [
       [{ text: "تعديل اسم الطفل" }, { text: "تعديل الشخصية" }],
       [{ text: "تعديل المدرسة" }, { text: "تعديل المرحلة الدراسية" }],
-      [{ text: "تعديل لون الليبل" }, { text: "حذف الطفل" }],
-      [{ text: "العودة لبيانات الأوردر" }],
+      [{ text: "حذف الطفل" }, { text: "العودة لبيانات الأوردر" }],
     ],
     "اختر التعديل المطلوب",
   );
@@ -328,15 +326,6 @@ function optionalTextKeyboard(placeholder) {
   );
 }
 
-function labelKeyboard() {
-  return keyboard(
-    controls([
-      [{ text: "أبيض" }, { text: "أسود" }, { text: "الاثنين" }],
-      [{ text: "لون آخر" }, { text: "تخطي" }],
-    ]),
-    "اختر لون ليبل الملابس",
-  );
-}
 function lineLabelKeyboard() { return keyboard(controls([[{ text: "أبيض" }, { text: "أسود" }, { text: "الاثنين" }]]), "اختر لون الليبل"); }
 
 function orderTypeKeyboard() {
@@ -545,14 +534,9 @@ async function promptForState(bot, msg, state) {
       "اكتب المرحلة الدراسية، أو اضغط تخطي:",
       optionalTextKeyboard("المرحلة الدراسية"),
     ],
-    order_label_color: ["اختر لون ليبل الملابس:", labelKeyboard()],
     order_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard()],
     order_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.pendingLine?.quantity || 1}`, textKeyboard("عدد الأبيض")],
     order_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.pendingLine?.quantity || 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
-    order_custom_label_color: [
-      "اكتب لون ليبل الملابس:",
-      textKeyboard("لون الليبل"),
-    ],
     order_type: ["اختر: باكدج أم صنف عادي؟", orderTypeKeyboard()],
     order_quantity: [
       `اكتب الكمية المطلوبة من «${state.pendingItem?.itemName || "الصنف"}».\nالمسموح: ${state.pendingItem?.minQuantity ?? "بدون حد أدنى"} إلى ${state.pendingItem?.maxQuantity ?? "بدون حد أقصى"}.`,
@@ -653,11 +637,10 @@ async function promptForState(bot, msg, state) {
       "اكتب المرحلة الدراسية للطفل الجديد، أو اضغط تخطي:",
       optionalTextKeyboard("المرحلة الدراسية"),
     ],
-    edit_add_child_color: [
-      "اكتب لون ليبل الملابس للطفل الجديد:",
-      textKeyboard("لون الليبل"),
-    ],
     edit_add_type: ["اختر ما تريد إضافته:", orderTypeKeyboard()],
+    edit_add_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard()],
+    edit_add_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.pendingLine?.quantity || 1}`, textKeyboard("عدد الأبيض")],
+    edit_add_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.pendingLine?.quantity || 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
   };
   if (
     [
@@ -759,19 +742,22 @@ function orderSummary(draft, orderCode) {
       lines.push(`📚 المرحلة الدراسية : ${child.schoolStage}`);
     }
 
-    if (child.labelColor && child.labelColor !== "غير محدد" && childLines.some((line) => line.details?.labelColor)) {
-      lines.push(`⚪️ لون ليبل الملابس : ${child.labelColor}`);
-    }
-
     // كل منتج / باكدج في سطر منفصل
     const orderItems = childLines
       .map((line) => {
+        let text;
         if (line.type === "item") {
-          return `${line.description} × ${line.quantity}`;
+          text = `${line.description} × ${line.quantity}`;
+        } else {
+          // الباكدج بدون × 1
+          text = line.description;
         }
-
-        // الباكدج بدون × 1
-        return line.description;
+        if (line.details?.labelColor) {
+          text += line.details.labelColor === "الاثنين"
+            ? ` (ليبل أبيض ${line.details.whiteCount ?? 0} / أسود ${line.details.blackCount ?? 0})`
+            : ` (ليبل ${line.details.labelColor})`;
+        }
+        return text;
       })
       .join("\n");
 
@@ -878,23 +864,23 @@ function savedOrderSummary(order) {
       lines.push(`📚 المرحلة الدراسية : ${child.school_stage}`);
     }
 
-    if (
-      child.clothing_label_color &&
-      child.clothing_label_color !== "غير محدد" &&
-      childLines.some((line) => line.details?.labelColor)
-    ) {
-      lines.push(`⚪️ لون ليبل الملابس : ${child.clothing_label_color}`);
-    }
-
     // كل منتج / باكدج في سطر منفصل
     const orderItems = childLines
       .map((line) => {
+        let text;
         if (line.line_type === "item") {
-          return `${line.description} × ${line.quantity}`;
+          text = `${line.description} × ${line.quantity}`;
+        } else {
+          // الباكدج بدون × 1
+          text = line.description;
         }
-
-        // الباكدج بدون × 1
-        return line.description;
+        const details = line.details && typeof line.details === "object" ? line.details : null;
+        if (details?.labelColor) {
+          text += details.labelColor === "الاثنين"
+            ? ` (ليبل أبيض ${details.whiteCount ?? 0} / أسود ${details.blackCount ?? 0})`
+            : ` (ليبل ${details.labelColor})`;
+        }
+        return text;
       })
       .join("\n");
 
@@ -1639,32 +1625,6 @@ async function handleOrderMessage(bot, msg, text, role) {
     children[state.draft.currentChildIndex].schoolStage =
       text === "تخطي" || !value ? "غير محدد" : value;
     state = await moveForward(telegramId, state, {
-      step: "order_label_color",
-      draft: { ...state.draft, children },
-    });
-  } else if (state.step === "order_label_color") {
-    if (text === "لون آخر")
-      state = await moveForward(telegramId, state, {
-        step: "order_custom_label_color",
-      });
-    else if (["أبيض", "أسود", "الاثنين", "تخطي"].includes(text)) {
-      const children = clone(state.draft.children);
-      children[state.draft.currentChildIndex].labelColor =
-        text === "تخطي" ? "غير محدد" : text;
-      state = await moveForward(telegramId, state, {
-        step: "order_type",
-        draft: { ...state.draft, children },
-      });
-    } else {
-      await promptForState(bot, msg, state);
-      return true;
-    }
-  } else if (state.step === "order_custom_label_color") {
-    const value = normalizeName(text);
-    if (!value) return true;
-    const children = clone(state.draft.children);
-    children[state.draft.currentChildIndex].labelColor = value;
-    state = await moveForward(telegramId, state, {
       step: "order_type",
       draft: { ...state.draft, children },
     });
@@ -2300,7 +2260,6 @@ async function handleOrderMessage(bot, msg, text, role) {
       "تعديل الشخصية": "cartoonCharacter",
       "تعديل المدرسة": "schoolName",
       "تعديل المرحلة الدراسية": "schoolStage",
-      "تعديل لون الليبل": "labelColor",
     };
     if (fields[text]) {
       state = await moveForward(telegramId, state, {
@@ -2673,19 +2632,11 @@ async function handleOrderMessage(bot, msg, text, role) {
     return true;
   } else if (state.step === "edit_add_child_stage") {
     const value = normalizeName(text);
-    state = await moveForward(telegramId, state, {
-      step: "edit_add_child_color",
-      editNewChild: {
-        ...state.editNewChild,
-        schoolStage: text === "تخطي" || !value ? "غير محدد" : value,
-      },
-    });
-    await promptForState(bot, msg, state);
-    return true;
-  } else if (state.step === "edit_add_child_color") {
-    const value = normalizeName(text);
-    if (!value) return true;
-    const child = { ...state.editNewChild, labelColor: value };
+    const child = {
+      ...state.editNewChild,
+      schoolStage: text === "تخطي" || !value ? "غير محدد" : value,
+      labelColor: "غير محدد",
+    };
     const added = await addOrderChild(state.editOrderCode, child, telegramId);
     if (!added) {
       state = await moveForward(telegramId, state, {
@@ -2775,18 +2726,30 @@ async function handleOrderMessage(bot, msg, text, role) {
     }
     if (state.listType === "package") {
       const row = selected.value;
+      const line = {
+        type: "package",
+        referenceId: row.id,
+        description: row.package_name,
+        quantity: 1,
+        unitPrice: Number(row.total_price),
+        lineTotal: Number(row.total_price),
+        details: {},
+      };
+      if (row.requires_label_color) {
+        state = await moveForward(telegramId, state, {
+          step: "edit_add_line_label_color",
+          pendingLine: line,
+          listType: null,
+          query: "",
+          page: 0,
+        });
+        await promptForState(bot, msg, state);
+        return true;
+      }
       await addOrderLine(
         state.editOrderCode,
         state.editChildId,
-        {
-          type: "package",
-          referenceId: row.id,
-          description: row.package_name,
-          quantity: 1,
-          unitPrice: Number(row.total_price),
-          lineTotal: Number(row.total_price),
-          details: {},
-        },
+        line,
         telegramId,
       );
       state = await moveForward(telegramId, state, {
@@ -2812,6 +2775,7 @@ async function handleOrderMessage(bot, msg, text, role) {
         price: Number(row.price),
         minQuantity: row.min_quantity,
         maxQuantity: row.max_quantity,
+        requiresLabelColor: row.requires_label_color,
       },
     });
     await bot.sendMessage(
@@ -2846,18 +2810,28 @@ async function handleOrderMessage(bot, msg, text, role) {
       );
       return true;
     }
+    const line = {
+      type: "item",
+      referenceId: item.referenceId,
+      description: item.itemName,
+      quantity,
+      unitPrice: item.price,
+      lineTotal: Math.round(item.price * quantity * 100) / 100,
+      details: {},
+    };
+    if (item.requiresLabelColor) {
+      state = await moveForward(telegramId, state, {
+        step: "edit_add_line_label_color",
+        pendingItem: null,
+        pendingLine: line,
+      });
+      await promptForState(bot, msg, state);
+      return true;
+    }
     await addOrderLine(
       state.editOrderCode,
       state.editChildId,
-      {
-        type: "item",
-        referenceId: item.referenceId,
-        description: item.itemName,
-        quantity,
-        unitPrice: item.price,
-        lineTotal: Math.round(item.price * quantity * 100) / 100,
-        details: {},
-      },
+      line,
       telegramId,
     );
     state = await moveForward(telegramId, state, {
@@ -2873,6 +2847,73 @@ async function handleOrderMessage(bot, msg, text, role) {
       state,
       "تمت إضافة الصنف وإعادة حساب الإجمالي ✅",
     );
+    return true;
+  } else if (state.step === "edit_add_line_label_color") {
+    if (text === "أبيض" || text === "أسود") {
+      const line = {
+        ...state.pendingLine,
+        details: { labelColor: text, [text === "أبيض" ? "whiteCount" : "blackCount"]: state.pendingLine.quantity },
+      };
+      await addOrderLine(state.editOrderCode, state.editChildId, line, telegramId);
+      state = await moveForward(telegramId, state, {
+        step: "edit_order_menu",
+        pendingLine: null,
+        labelWhiteCount: null,
+      });
+      await showEditRoot(bot, msg, state, "تمت الإضافة وإعادة حساب الإجمالي ✅");
+      return true;
+    }
+    if (text === "الاثنين") {
+      state = await moveForward(telegramId, state, {
+        step: "edit_add_line_label_white_count",
+      });
+      await promptForState(bot, msg, state);
+      return true;
+    }
+    await promptForState(bot, msg, state);
+    return true;
+  } else if (state.step === "edit_add_line_label_white_count") {
+    const white = Number(
+      String(text).replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
+    );
+    if (!Number.isSafeInteger(white) || white < 0 || white > state.pendingLine.quantity) {
+      await bot.sendMessage(
+        msg.chat.id,
+        "اكتب عدداً صحيحاً لا يزيد عن الكمية المطلوبة.",
+        textKeyboard("عدد الأبيض"),
+      );
+      return true;
+    }
+    state = await moveForward(telegramId, state, {
+      step: "edit_add_line_label_black_count",
+      labelWhiteCount: white,
+    });
+    await promptForState(bot, msg, state);
+    return true;
+  } else if (state.step === "edit_add_line_label_black_count") {
+    const black = Number(
+      String(text).replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
+    );
+    const white = Number(state.labelWhiteCount || 0);
+    if (!Number.isSafeInteger(black) || black < 0 || white + black > state.pendingLine.quantity) {
+      await bot.sendMessage(
+        msg.chat.id,
+        "مجموع الأبيض والأسود لا يمكن أن يزيد عن الكمية المطلوبة.",
+        textKeyboard("عدد الأسود"),
+      );
+      return true;
+    }
+    const line = {
+      ...state.pendingLine,
+      details: { labelColor: "الاثنين", whiteCount: white, blackCount: black },
+    };
+    await addOrderLine(state.editOrderCode, state.editChildId, line, telegramId);
+    state = await moveForward(telegramId, state, {
+      step: "edit_order_menu",
+      pendingLine: null,
+      labelWhiteCount: null,
+    });
+    await showEditRoot(bot, msg, state, "تمت الإضافة وإعادة حساب الإجمالي ✅");
     return true;
   } else if (state.step === "edit_cancel_confirm") {
     if (text !== "الغاء") {
