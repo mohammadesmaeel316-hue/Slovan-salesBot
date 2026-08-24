@@ -11,6 +11,8 @@ const {
   getOrderByCode,
   listItems,
   listPackages,
+  getItemById,
+  getPackageById,
   searchDeliveryPrices,
   searchItems,
   searchOrders,
@@ -243,15 +245,11 @@ async function lineRequiresLabel(line) {
   if (!line.reference_id) return false;
   try {
     if (line.line_type === "item") {
-      const item = (await listItems()).find(
-        (row) => String(row.id) === String(line.reference_id),
-      );
+      const item = await getItemById(line.reference_id);
       return Boolean(item?.requires_label_color);
     }
     if (line.line_type === "package") {
-      const pkg = (await listPackages()).find(
-        (row) => String(row.id) === String(line.reference_id),
-      );
+      const pkg = await getPackageById(line.reference_id);
       return Boolean(pkg?.requires_label_color);
     }
   } catch {}
@@ -2488,9 +2486,7 @@ async function handleOrderMessage(bot, msg, text, role) {
       return true;
     }
     if (state.editLine.line_type === "item" && state.editLine.reference_id) {
-      const catalog = (await listItems()).find(
-        (item) => String(item.id) === String(state.editLine.reference_id),
-      );
+      const catalog = await getItemById(state.editLine.reference_id);
       if (
         catalog &&
         ((catalog.min_quantity !== null &&

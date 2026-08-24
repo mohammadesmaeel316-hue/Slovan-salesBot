@@ -266,14 +266,14 @@ async function requireOrdersExport(bot, msg, role) {
   return false;
 }
 
-async function sendOrdersWorkbook(bot, msg) {
+async function sendOrdersWorkbook(bot, msg, role) {
   const rows = await listOrdersForExport();
   const workbook = await buildOrdersWorkbook(rows);
   await bot.sendDocument(msg.chat.id, workbook, {
     caption: rows.length
       ? `سجل الطلبات الحالي — ${new Set(rows.map((row) => row.order_code)).size} أوردر.`
       : "سجل الطلبات فارغ حالياً.",
-    ...mainKeyboard(await getRole(msg)),
+    ...mainKeyboard(role),
   }, { filename: "orders.xlsx", contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
 
@@ -707,8 +707,10 @@ function registerAccessHandlers(bot) {
 
   bot.on("document", trackHandler(async (msg) => {
     try {
-      const role = await getRole(msg);
-      const state = await getConversationState(msg.from.id);
+      const [role, state] = await Promise.all([
+        getRole(msg),
+        getConversationState(msg.from.id),
+      ]);
       const isItemsUpload = state?.step === "awaiting_items_file";
       const isPackagesUpload = state?.step === "awaiting_packages_file";
       const isDeliveryUpload = state?.step === "awaiting_delivery_prices_file";
@@ -901,7 +903,7 @@ function registerAccessHandlers(bot) {
       }
       if (/^تحميل سجل الطلبات$/i.test(text)) {
         if (!(await requireOrdersExport(bot, msg, role))) return;
-        await sendOrdersWorkbook(bot, msg);
+        await sendOrdersWorkbook(bot, msg, role);
         return;
       }
       if (/^قائمة المستخدمين$/i.test(text)) {

@@ -145,8 +145,51 @@ async function getPreviousMonthReport() {
   return { ...totals.rows[0], top: top.rows };
 }
 
+async function schemaReady() {
+  const result = await pool.query(`
+    select (
+      (select count(*)::int from information_schema.tables
+        where table_schema = 'public' and table_name in (
+          'bot_users', 'access_requests', 'access_events', 'bot_conversation_states',
+          'delivery_prices', 'catalog_items', 'packages', 'package_items',
+          'sales_orders', 'order_children', 'order_lines'
+        )) = 11
+      and (select count(*)::int from information_schema.columns
+        where table_schema = 'public' and table_name = 'order_children'
+          and column_name = 'school_stage') = 1
+      and (select count(*)::int from information_schema.columns
+        where table_schema = 'public' and table_name = 'sales_orders'
+          and column_name in (
+            'parent_phone_2', 'parent_phone_3', 'address', 'notes', 'discount_type',
+            'discount_value', 'discount_amount', 'advance_payment', 'advance_payment_details'
+          )) = 9
+      and (select count(*)::int from information_schema.columns
+        where table_schema = 'public' and column_name = 'requires_label_color'
+          and table_name in ('catalog_items', 'packages')) = 2
+      and (select count(*)::int from pg_constraint
+        where conname in (
+          'sales_orders_parent_phone_2_format', 'sales_orders_parent_phone_3_format',
+          'sales_orders_discount_type_check', 'sales_orders_discount_amount_range',
+          'sales_orders_advance_payment_range'
+        )) = 5
+      and (select count(*)::int from pg_indexes
+        where schemaname = 'public' and indexname in (
+          'catalog_items_name_trgm_idx', 'packages_name_trgm_idx', 'package_items_name_trgm_idx',
+          'delivery_prices_area_trgm_idx', 'sales_orders_parent_name_trgm_idx',
+          'sales_orders_parent_phone_2_idx', 'sales_orders_parent_phone_3_idx',
+          'order_children_name_trgm_idx'
+        )) = 8
+      and exists (select 1 from pg_extension where extname = 'pg_trgm')
+    ) as ready
+  `);
+  return Boolean(result.rows[0]?.ready);
+}
+
 async function testConnection() {
   await pool.query("select 1");
+  if (await schemaReady()) {
+    return;
+  }
   await pool.query(`
     create extension if not exists pg_trgm;
     create index if not exists catalog_items_name_trgm_idx on public.catalog_items using gin (item_name gin_trgm_ops);
@@ -226,6 +269,29 @@ async function listItems() {
     order by id asc
   `);
   return result.rows;
+}
+
+async function getItemById(id) {
+  const result = await pool.query(`
+    select id, item_name, price::text as price, min_quantity, max_quantity, requires_label_color
+    from public.catalog_items
+    where id = $1
+    limit 1
+  `, [String(id)]);
+  return result.rows[0] || null;
+}
+
+async function getPackageById(id) {
+  const result = await pool.query(`
+    select p.id, p.package_name, p.total_price::text as total_price, p.requires_label_color,
+           coalesce(json_agg(json_build_object('item_name', pi.item_name, 'quantity', pi.quantity) order by pi.position) filter (where pi.id is not null), '[]'::json) as items
+    from public.packages p
+    left join public.package_items pi on pi.package_id = p.id
+    where p.id = $1
+    group by p.id
+    limit 1
+  `, [String(id)]);
+  return result.rows[0] || null;
 }
 
 function searchPattern(query) { return `%${String(query || "").trim()}%`; }
@@ -366,6 +432,8 @@ async function saveOrder(draft, actorTelegramId) {
       String(advancePayment), draft.advancePaymentDetails || null, String(actorTelegramId)]);
     const order = orderResult.rows[0];
     // The database identity is already unique; keep the customer-facing ID short.
+    // Note: a WITH-ins/UPDATE CTE cannot be used here - the UPDATE would not see
+    // the newly inserted row within the same statement snapshot.
     const orderCode = `ORD#${String(order.id).padStart(3, "0")}`;
     await client.query("update public.sales_orders set order_code=$2 where id=$1", [order.id, orderCode]);
 
@@ -1108,6 +1176,9 @@ module.exports = {
   getAccessRequest,
   getAccessUser,
   getConversationState,
+  getItemById,
+  getPackageById,
+  schemaReady,
   listDeliveryPrices,
   listItems,
   listPackages,
