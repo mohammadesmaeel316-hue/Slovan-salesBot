@@ -299,7 +299,7 @@ async function moveForward(telegramId, state, changes) {
 async function goBack(telegramId, state) {
   const history = [...(state.history || [])];
   const previous = history.pop();
-  if (!previous) return state;
+  if (!previous) return null;
   const restored = { ...previous, history };
   await setConversationState(telegramId, restored);
   return restored;
@@ -1211,9 +1211,12 @@ async function handleOrderMessage(bot, msg, text, role) {
     return true;
   }
   if (
-    !["admin_cancel_order_confirm", "admin_delete_all_confirm"].includes(
-      state.step,
-    ) &&
+    ![
+      "admin_cancel_order_confirm",
+      "admin_delete_all_confirm",
+      "order_cancel_confirm",
+      "edit_cancel_confirm",
+    ].includes(state.step) &&
     /^(إلغاء الطلب|إلغاء)$/i.test(text)
   ) {
     state = await moveForward(telegramId, state, {
@@ -1223,8 +1226,18 @@ async function handleOrderMessage(bot, msg, text, role) {
     return true;
   }
   if (/^رجوع خطوة$/i.test(text)) {
-    state = await goBack(telegramId, state);
-    await promptForState(bot, msg, state);
+    const previous = await goBack(telegramId, state);
+    if (!previous) {
+      // Nothing left to restore (for example an old session stored before this fix).
+      await clearConversationState(telegramId);
+      await bot.sendMessage(
+        msg.chat.id,
+        "لا توجد خطوات سابقة محفوظة. ابدأ من القائمة:",
+        orderMenuKeyboard(),
+      );
+      return true;
+    }
+    await promptForState(bot, msg, previous);
     return true;
   }
 
@@ -1323,7 +1336,7 @@ async function handleOrderMessage(bot, msg, text, role) {
     );
     return true;
   } else if (state.step === "admin_cancel_order_confirm") {
-    if (text !== "الغاء") {
+    if (!/^إ?الغاء$/i.test(text)) {
       await bot.sendMessage(
         msg.chat.id,
         "لم يتم إلغاء الأوردر. اكتب «الغاء» حرفياً للتأكيد، أو اضغط رجوع خطوة.",
@@ -1932,7 +1945,7 @@ async function handleOrderMessage(bot, msg, text, role) {
       draft: { ...state.draft, discount: { type: state.discountType, value } },
     });
   } else if (state.step === "order_cancel_confirm") {
-    if (text !== "الغاء") {
+    if (!/^إ?الغاء$/i.test(text)) {
       await promptForState(bot, msg, state);
       return true;
     }
@@ -2916,7 +2929,7 @@ async function handleOrderMessage(bot, msg, text, role) {
     await showEditRoot(bot, msg, state, "تمت الإضافة وإعادة حساب الإجمالي ✅");
     return true;
   } else if (state.step === "edit_cancel_confirm") {
-    if (text !== "الغاء") {
+    if (!/^إ?الغاء$/i.test(text)) {
       await bot.sendMessage(
         msg.chat.id,
         "لم يتم إلغاء الأوردر. إذا كنت متأكداً اكتب «الغاء» حرفياً، أو اضغط رجوع خطوة.",
