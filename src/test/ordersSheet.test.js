@@ -48,8 +48,9 @@ test("builds an orders workbook with creator and order details", async () => {
   assert.equal(summary.getRow(2).getCell(17).value, 285);
   assert.equal(summary.rowCount, 2);
   assert.equal(details.rowCount, 3);
-  assert.equal(details.getRow(2).getCell(20).text, "Mohamed Esmail");
-  assert.equal(details.getRow(2).getCell(27).value, 285);
-  assert.equal(details.getRow(1).getCell(31).text, "تاريخ الإنشاء");
-  assert.equal(details.getRow(1).getCell(32).text, "آخر تعديل");
+  assert.equal(details.getRow(1).getCell(11).text, "المرحلة الدراسية");
+  assert.equal(details.getRow(2).getCell(21).text, "Mohamed Esmail");
+  assert.equal(details.getRow(2).getCell(28).value, 285);
+  assert.equal(details.getRow(1).getCell(32).text, "تاريخ الإنشاء");
+  assert.equal(details.getRow(1).getCell(33).text, "آخر تعديل");
 });

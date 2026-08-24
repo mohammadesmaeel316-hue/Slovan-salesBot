@@ -514,11 +514,17 @@ async function promptForState(bot, msg, state) {
       optionalTextKeyboard("رقم الموبايل الثالث"),
     ],
     order_cartoon: [
-      "اكتب الشخصية الكرتونية المطلوبة:",
-      textKeyboard("الشخصية الكرتونية"),
+      "اكتب الشخصية الكرتونية المطلوبة، أو اضغط تخطي:",
+      optionalTextKeyboard("الشخصية الكرتونية"),
     ],
-    order_school: ["اكتب اسم المدرسة:", textKeyboard("اسم المدرسة")],
-    order_stage: ["اكتب المرحلة الدراسية:", textKeyboard("المرحلة الدراسية")],
+    order_school: [
+      "اكتب اسم المدرسة، أو اضغط تخطي:",
+      optionalTextKeyboard("اسم المدرسة"),
+    ],
+    order_stage: [
+      "اكتب المرحلة الدراسية، أو اضغط تخطي:",
+      optionalTextKeyboard("المرحلة الدراسية"),
+    ],
     order_label_color: ["اختر لون ليبل الملابس:", labelKeyboard()],
     order_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard()],
     order_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.pendingLine?.quantity || 1}`, textKeyboard("عدد الأبيض")],
@@ -719,15 +725,18 @@ function orderSummary(draft, orderCode) {
   draft.children.forEach((child, index) => {
     const childLines = draft.lines.filter((line) => line.childIndex === index);
 
-    lines.push(
-      "",
-      `🌝 اسم الطفل : ${child.childName}`,
-      `🧸 الشخصيه : ${child.cartoonCharacter}`,
-      `📌 المدرسة :- ${child.schoolName}`,
-      `📚 المرحلة الدراسية : ${child.schoolStage || "غير محدد"}`,
-    );
+    lines.push("", `🌝 اسم الطفل : ${child.childName}`);
+    if (child.cartoonCharacter && child.cartoonCharacter !== "غير محدد") {
+      lines.push(`🧸 الشخصيه : ${child.cartoonCharacter}`);
+    }
+    if (child.schoolName && child.schoolName !== "غير محدد") {
+      lines.push(`📌 المدرسة :- ${child.schoolName}`);
+    }
+    if (child.schoolStage && child.schoolStage !== "غير محدد") {
+      lines.push(`📚 المرحلة الدراسية : ${child.schoolStage}`);
+    }
 
-    if (child.labelColor !== "غير محدد") {
+    if (child.labelColor && child.labelColor !== "غير محدد" && childLines.some((line) => line.details?.labelColor)) {
       lines.push(`⚪️ لون ليبل الملابس : ${child.labelColor}`);
     }
 
@@ -835,15 +844,22 @@ function savedOrderSummary(order) {
       (line) => String(line.child_id) === String(child.id),
     );
 
-    lines.push(
-      "",
-      `🌝 اسم الطفل : ${child.child_name}`,
-      `🧸 الشخصيه : ${child.cartoon_character}`,
-      `📌 المدرسة :- ${child.school_name}`,
-      `📚 المرحلة الدراسية : ${child.school_stage || "غير محدد"}`,
-    );
+    lines.push("", `🌝 اسم الطفل : ${child.child_name}`);
+    if (child.cartoon_character && child.cartoon_character !== "غير محدد") {
+      lines.push(`🧸 الشخصيه : ${child.cartoon_character}`);
+    }
+    if (child.school_name && child.school_name !== "غير محدد") {
+      lines.push(`📌 المدرسة :- ${child.school_name}`);
+    }
+    if (child.school_stage && child.school_stage !== "غير محدد") {
+      lines.push(`📚 المرحلة الدراسية : ${child.school_stage}`);
+    }
 
-    if (child.clothing_label_color !== "غير محدد") {
+    if (
+      child.clothing_label_color &&
+      child.clothing_label_color !== "غير محدد" &&
+      childLines.some((line) => line.details?.labelColor)
+    ) {
       lines.push(`⚪️ لون ليبل الملابس : ${child.clothing_label_color}`);
     }
 
@@ -1578,29 +1594,29 @@ async function handleOrderMessage(bot, msg, text, role) {
     }
   } else if (state.step === "order_cartoon") {
     const value = normalizeName(text);
-    if (!value) return true;
     const children = clone(state.draft.children);
-    children[state.draft.currentChildIndex].cartoonCharacter = value;
+    children[state.draft.currentChildIndex].cartoonCharacter =
+      text === "تخطي" || !value ? "غير محدد" : value;
     state = await moveForward(telegramId, state, {
       step: "order_school",
       draft: { ...state.draft, children },
     });
   } else if (state.step === "order_school") {
     const value = normalizeName(text);
-    if (!value) return true;
     const children = clone(state.draft.children);
-    children[state.draft.currentChildIndex].schoolName = value;
+    children[state.draft.currentChildIndex].schoolName =
+      text === "تخطي" || !value ? "غير محدد" : value;
     state = await moveForward(telegramId, state, {
       step: "order_stage",
       draft: { ...state.draft, children },
     });
   } else if (state.step === "order_stage") {
     const value = normalizeName(text);
-    if (!value) return true;
     const children = clone(state.draft.children);
-    children[state.draft.currentChildIndex].schoolStage = value;
+    children[state.draft.currentChildIndex].schoolStage =
+      text === "تخطي" || !value ? "غير محدد" : value;
     state = await moveForward(telegramId, state, {
-      step: "order_type",
+      step: "order_label_color",
       draft: { ...state.draft, children },
     });
   } else if (state.step === "order_label_color") {
