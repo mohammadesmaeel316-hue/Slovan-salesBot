@@ -10,6 +10,7 @@ const {
   getConversationState,
   getOrderByCode,
   listItems,
+  listPackages,
   searchDeliveryPrices,
   searchItems,
   searchOrders,
@@ -25,6 +26,7 @@ const {
   updateOrderChild,
   updateOrderDelivery,
   updateOrderLineQuantity,
+  updateOrderLineDetails,
 } = require("./db");
 const { normalizeName, normalizePhone } = require("./utils");
 
@@ -81,6 +83,7 @@ const ORDER_STEPS = new Set([
   "edit_line_menu",
   "edit_line_quantity",
   "edit_line_delete_confirm",
+  "edit_line_label_color", "edit_line_label_white_count", "edit_line_label_black_count",
   "edit_add_child_name",
   "edit_add_child_cartoon",
   "edit_add_child_school",
@@ -226,14 +229,33 @@ function childEditKeyboard() {
   );
 }
 
-function lineEditKeyboard() {
-  return keyboard(
-    [
-      [{ text: "تعديل الكمية" }, { text: "حذف المنتج" }],
-      [{ text: "العودة لبيانات الأوردر" }],
-    ],
-    "اختر التعديل المطلوب",
-  );
+function lineEditKeyboard(hasLabel = false) {
+  const rows = [
+    [{ text: "تعديل الكمية" }, { text: "حذف المنتج" }],
+  ];
+  if (hasLabel) rows.push([{ text: "تعديل لون الليبل" }]);
+  rows.push([{ text: "العودة لبيانات الأوردر" }]);
+  return keyboard(rows, "اختر التعديل المطلوب");
+}
+
+async function lineRequiresLabel(line) {
+  if (line.details?.labelColor) return true;
+  if (!line.reference_id) return false;
+  try {
+    if (line.line_type === "item") {
+      const item = (await listItems()).find(
+        (row) => String(row.id) === String(line.reference_id),
+      );
+      return Boolean(item?.requires_label_color);
+    }
+    if (line.line_type === "package") {
+      const pkg = (await listPackages()).find(
+        (row) => String(row.id) === String(line.reference_id),
+      );
+      return Boolean(pkg?.requires_label_color);
+    }
+  } catch {}
+  return false;
 }
 
 function confirmKeyboard(confirmText) {
@@ -602,6 +624,9 @@ async function promptForState(bot, msg, state) {
       "اكتب تفاصيل الدفع:",
       keyboard([[{ text: "رجوع خطوة" }, { text: "إلغاء" }]], "تفاصيل الدفع"),
     ],
+    edit_line_label_color: ["اختر لون الليبل لهذا المنتج:", lineLabelKeyboard()],
+    edit_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.editLine?.quantity || 1}`, textKeyboard("عدد الأبيض")],
+    edit_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.editLine?.quantity || 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
     admin_cancel_order_code: [
       "اكتب رقم الأوردر المراد إلغاؤه، مثال: ORD#001",
       keyboard([[{ text: "إلغاء" }]], "رقم الأوردر"),
@@ -2406,10 +2431,11 @@ async function handleOrderMessage(bot, msg, text, role) {
       editLineId: order.lines[index].id,
       editLine: order.lines[index],
     });
+    const hasLabel = await lineRequiresLabel(order.lines[index]);
     await bot.sendMessage(
       msg.chat.id,
       `${order.lines[index].description} × ${order.lines[index].quantity}`,
-      lineEditKeyboard(),
+      lineEditKeyboard(hasLabel),
     );
     return true;
   } else if (state.step === "edit_line_menu") {
@@ -2422,6 +2448,14 @@ async function handleOrderMessage(bot, msg, text, role) {
         "اكتب الكمية الجديدة:",
         textKeyboard("الكمية"),
       );
+      return true;
+    }
+    if (text === "تعديل لون الليبل") {
+      state = await moveForward(telegramId, state, {
+        step: "edit_line_label_color",
+        labelWhiteCount: null,
+      });
+      await promptForState(bot, msg, state);
       return true;
     }
     if (text === "حذف المنتج") {
@@ -2493,7 +2527,8 @@ async function handleOrderMessage(bot, msg, text, role) {
   } else if (state.step === "edit_line_delete_confirm") {
     if (text === "لا، رجوع") {
       state = await moveForward(telegramId, state, { step: "edit_line_menu" });
-      await bot.sendMessage(msg.chat.id, "لم يتم الحذف.", lineEditKeyboard());
+      const hasLabel = state.editLine ? await lineRequiresLabel(state.editLine) : false;
+      await bot.sendMessage(msg.chat.id, "لم يتم الحذف.", lineEditKeyboard(hasLabel));
       return true;
     }
     if (text !== "نعم، حذف المنتج") return true;
@@ -2504,10 +2539,11 @@ async function handleOrderMessage(bot, msg, text, role) {
     );
     if (result?.lastLine) {
       state = await moveForward(telegramId, state, { step: "edit_line_menu" });
+      const hasLabel = state.editLine ? await lineRequiresLabel(state.editLine) : false;
       await bot.sendMessage(
         msg.chat.id,
         "لا يمكن حذف المنتج الوحيد. أضف منتجاً آخر أولاً أو ألغِ الأوردر.",
-        lineEditKeyboard(),
+        lineEditKeyboard(hasLabel),
       );
       return true;
     }
@@ -2522,6 +2558,84 @@ async function handleOrderMessage(bot, msg, text, role) {
       state,
       "تم حذف المنتج وإعادة حساب الإجمالي ✅",
     );
+    return true;
+  } else if (state.step === "edit_line_label_color") {
+    if (text === "أبيض" || text === "أسود") {
+      await updateOrderLineDetails(
+        state.editOrderCode,
+        state.editLineId,
+        {
+          labelColor: text,
+          [text === "أبيض" ? "whiteCount" : "blackCount"]: state.editLine.quantity,
+        },
+        telegramId,
+      );
+      state = await moveForward(telegramId, state, {
+        step: "edit_order_menu",
+        editLineId: null,
+        editLine: null,
+        labelWhiteCount: null,
+      });
+      await showEditRoot(bot, msg, state, "تم تعديل لون الليبل ✅");
+      return true;
+    }
+    if (text === "الاثنين") {
+      state = await moveForward(telegramId, state, {
+        step: "edit_line_label_white_count",
+      });
+      await promptForState(bot, msg, state);
+      return true;
+    }
+    await promptForState(bot, msg, state);
+    return true;
+  } else if (state.step === "edit_line_label_white_count") {
+    const white = Number(
+      String(text).replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
+    );
+    if (
+      !Number.isSafeInteger(white) ||
+      white < 0 ||
+      white > state.editLine.quantity
+    ) {
+      await bot.sendMessage(
+        msg.chat.id,
+        "اكتب عدداً صحيحاً لا يزيد عن الكمية المطلوبة.",
+        textKeyboard("عدد الأبيض"),
+      );
+      return true;
+    }
+    state = await moveForward(telegramId, state, {
+      step: "edit_line_label_black_count",
+      labelWhiteCount: white,
+    });
+    await promptForState(bot, msg, state);
+    return true;
+  } else if (state.step === "edit_line_label_black_count") {
+    const black = Number(
+      String(text).replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
+    );
+    const white = Number(state.labelWhiteCount || 0);
+    if (!Number.isSafeInteger(black) || black < 0 || white + black > state.editLine.quantity) {
+      await bot.sendMessage(
+        msg.chat.id,
+        "مجموع الأبيض والأسود لا يمكن أن يزيد عن الكمية المطلوبة.",
+        textKeyboard("عدد الأسود"),
+      );
+      return true;
+    }
+    await updateOrderLineDetails(
+      state.editOrderCode,
+      state.editLineId,
+      { labelColor: "الاثنين", whiteCount: white, blackCount: black },
+      telegramId,
+    );
+    state = await moveForward(telegramId, state, {
+      step: "edit_order_menu",
+      editLineId: null,
+      editLine: null,
+      labelWhiteCount: null,
+    });
+    await showEditRoot(bot, msg, state, "تم تعديل لون الليبل ✅");
     return true;
   } else if (state.step === "edit_add_child_name") {
     const value = normalizeName(text);

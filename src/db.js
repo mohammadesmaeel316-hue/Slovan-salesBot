@@ -594,6 +594,22 @@ async function updateOrderLineQuantity(orderCode, lineId, quantity, actorTelegra
   } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
 }
 
+async function updateOrderLineDetails(orderCode, lineId, details, actorTelegramId) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const result = await client.query(`
+      update public.order_lines l set details=$3::jsonb
+      from public.sales_orders o
+      where l.id=$2 and l.order_id=o.id and upper(o.order_code)=upper($1) and o.status='confirmed'
+      returning l.order_id, l.id
+    `, [String(orderCode), String(lineId), JSON.stringify(details || {})]);
+    if (!result.rows.length) { await client.query("rollback"); return null; }
+    await recalculateOrder(client, result.rows[0].order_id, actorTelegramId);
+    await client.query("commit"); return result.rows[0];
+  } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
+}
+
 async function deleteOrderLine(orderCode, lineId, actorTelegramId) {
   const client = await pool.connect();
   try {
@@ -1124,6 +1140,7 @@ module.exports = {
   deleteOrderChild,
   addOrderLine,
   updateOrderLineQuantity,
+  updateOrderLineDetails,
   deleteOrderLine,
   cancelSavedOrder,
   setConversationState,
