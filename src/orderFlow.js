@@ -652,7 +652,129 @@ async function promptForState(bot, msg, state) {
   )
     return showList(bot, msg, state);
   const prompt = prompts[state.step];
-  if (prompt) await bot.sendMessage(msg.chat.id, prompt[0], prompt[1]);
+  if (prompt) {
+    await bot.sendMessage(msg.chat.id, prompt[0], prompt[1]);
+    return;
+  }
+  // Steps rendered by custom functions must also re-render when the user
+  // presses رجوع خطوة back into them, otherwise the bot appears stuck.
+  if (state.step === "edit_order_menu") return showEditRoot(bot, msg, state);
+  if (state.step === "edit_children_list") return showEditChildren(bot, msg, state);
+  if (state.step === "edit_lines_list") return showEditLines(bot, msg, state);
+  if (state.step === "view_order_results") return showOrderSearchResults(bot, msg, state);
+  if (state.step === "order_duplicate_warning") {
+    return bot.sendMessage(
+      msg.chat.id,
+      duplicateWarningText(state.duplicateOrders || []),
+      keyboard(
+        [
+          [{ text: "متابعة الأوردر الجديد" }],
+          [{ text: "الرجوع وتعديل البيانات" }, { text: "إلغاء" }],
+        ],
+        "اختر الإجراء",
+      ),
+    );
+  }
+  if (state.step === "admin_cancel_order_confirm") {
+    return bot.sendMessage(
+      msg.chat.id,
+      `${savedOrderSummary(state.cancelOrderPreview || {})}\n\nلإلغاء هذا الأوردر اكتب كلمة «الغاء» حرفياً. أو اضغط رجوع خطوة.`,
+      cancelConfirmationKeyboard(),
+    );
+  }
+  if (state.step === "customer_results") {
+    return bot.sendMessage(
+      msg.chat.id,
+      "اختر العميل:",
+      customerResultsKeyboard(state.customerResults || []),
+    );
+  }
+  if (state.step === "customer_preview") {
+    const actions =
+      state.customerContext === "new_order"
+        ? keyboard(
+            [
+              [{ text: "استخدام بيانات العميل" }],
+              [{ text: "إدخال عميل جديد" }],
+              [{ text: "إلغاء" }],
+            ],
+            "اختر الإجراء",
+          )
+        : orderMenuKeyboard();
+    return bot.sendMessage(
+      msg.chat.id,
+      customerProfileText(state.selectedCustomer || {}),
+      actions,
+    );
+  }
+  if (state.step === "edit_child_menu") {
+    const order = await editOrderAndCheck(state);
+    const child = order?.children.find(
+      (c) => String(c.id) === String(state.editChildId),
+    );
+    return bot.sendMessage(
+      msg.chat.id,
+      `الطفل: ${child?.child_name ?? ""}`,
+      childEditKeyboard(),
+    );
+  }
+  if (state.step === "edit_line_menu") {
+    const order = await editOrderAndCheck(state);
+    const line = order?.lines.find(
+      (l) => String(l.id) === String(state.editLineId),
+    );
+    if (!line) return showEditLines(bot, msg, state);
+    const hasLabel = await lineRequiresLabel(line);
+    return bot.sendMessage(
+      msg.chat.id,
+      `${line.description} × ${line.quantity}`,
+      lineEditKeyboard(hasLabel),
+    );
+  }
+  if (state.step === "edit_add_select_child") {
+    const order = await editOrderAndCheck(state);
+    if (!order) return;
+    const rows = order.children.map((child, i) => [
+      { text: `إضافة للطفل ${i + 1}: ${short(child.child_name, 38)}` },
+    ]);
+    rows.push([{ text: "العودة لبيانات الأوردر" }]);
+    return bot.sendMessage(
+      msg.chat.id,
+      "اختر الطفل الذي سيُضاف له المنتج:",
+      keyboard(rows, "اختر الطفل"),
+    );
+  }
+  if (state.step === "edit_order_value") {
+    return bot.sendMessage(
+      msg.chat.id,
+      "اكتب القيمة الجديدة:",
+      keyboard(
+        [[{ text: "رجوع خطوة" }, { text: "إلغاء" }]],
+        "القيمة الجديدة",
+      ),
+    );
+  }
+  if (state.step === "edit_child_value") {
+    return bot.sendMessage(
+      msg.chat.id,
+      "اكتب القيمة الجديدة:",
+      textKeyboard("القيمة الجديدة"),
+    );
+  }
+  if (state.step === "edit_line_quantity") {
+    return bot.sendMessage(
+      msg.chat.id,
+      "اكتب الكمية الجديدة:",
+      textKeyboard("الكمية"),
+    );
+  }
+  if (state.step === "edit_add_quantity") {
+    return bot.sendMessage(
+      msg.chat.id,
+      `اكتب الكمية من «${state.pendingItem?.itemName || "الصنف"}».\nالمسموح: ${state.pendingItem?.minQuantity ?? 1} إلى ${state.pendingItem?.maxQuantity ?? "بدون حد"}.`,
+      textKeyboard("الكمية"),
+    );
+  }
 }
 
 function arabicDigits(value) {
