@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 const {
   clearConversationState,
@@ -1336,7 +1336,7 @@ async function handleOrderMessage(bot, msg, text, role) {
     );
     return true;
   } else if (state.step === "admin_cancel_order_confirm") {
-    if (!/^إ?الغاء$/i.test(text)) {
+    if (!/^(الغاء|إلغاء)$/i.test(text)) {
       await bot.sendMessage(
         msg.chat.id,
         "لم يتم إلغاء الأوردر. اكتب «الغاء» حرفياً للتأكيد، أو اضغط رجوع خطوة.",
@@ -1579,8 +1579,9 @@ async function handleOrderMessage(bot, msg, text, role) {
       return true;
     }
   } else if (state.step === "order_parent_phone_2") {
+    const nextStep = state.draft.children.length ? "order_cartoon" : "order_child_name";
     if (text === "تخطي")
-      state = await moveForward(telegramId, state, { step: "order_cartoon" });
+      state = await moveForward(telegramId, state, { step: nextStep });
     else {
       const parentPhone2 = normalizePhone(text);
       if (!parentPhone2) {
@@ -1597,8 +1598,9 @@ async function handleOrderMessage(bot, msg, text, role) {
       });
     }
   } else if (state.step === "order_parent_phone_3") {
+    const nextStep = state.draft.children.length ? "order_cartoon" : "order_child_name";
     if (text === "تخطي")
-      state = await moveForward(telegramId, state, { step: "order_cartoon" });
+      state = await moveForward(telegramId, state, { step: nextStep });
     else {
       const parentPhone3 = normalizePhone(text);
       if (!parentPhone3) {
@@ -1610,13 +1612,16 @@ async function handleOrderMessage(bot, msg, text, role) {
         return true;
       }
       state = await moveForward(telegramId, state, {
-        step: "order_cartoon",
+        step: nextStep,
         draft: { ...state.draft, parentPhone3 },
       });
     }
   } else if (state.step === "order_cartoon") {
     const value = normalizeName(text);
     const children = clone(state.draft.children);
+    if (!children[state.draft.currentChildIndex]) {
+      children[state.draft.currentChildIndex] = { childName: "غير محدد", cartoonCharacter: null, schoolName: null, schoolStage: null, labelColor: null };
+    }
     children[state.draft.currentChildIndex].cartoonCharacter =
       text === "تخطي" || !value ? "غير محدد" : value;
     state = await moveForward(telegramId, state, {
@@ -1626,6 +1631,9 @@ async function handleOrderMessage(bot, msg, text, role) {
   } else if (state.step === "order_school") {
     const value = normalizeName(text);
     const children = clone(state.draft.children);
+    if (!children[state.draft.currentChildIndex]) {
+      children[state.draft.currentChildIndex] = { childName: "غير محدد", cartoonCharacter: null, schoolName: null, schoolStage: null, labelColor: null };
+    }
     children[state.draft.currentChildIndex].schoolName =
       text === "تخطي" || !value ? "غير محدد" : value;
     state = await moveForward(telegramId, state, {
@@ -1635,6 +1643,9 @@ async function handleOrderMessage(bot, msg, text, role) {
   } else if (state.step === "order_stage") {
     const value = normalizeName(text);
     const children = clone(state.draft.children);
+    if (!children[state.draft.currentChildIndex]) {
+      children[state.draft.currentChildIndex] = { childName: "غير محدد", cartoonCharacter: null, schoolName: null, schoolStage: null, labelColor: null };
+    }
     children[state.draft.currentChildIndex].schoolStage =
       text === "تخطي" || !value ? "غير محدد" : value;
     state = await moveForward(telegramId, state, {
@@ -1945,7 +1956,7 @@ async function handleOrderMessage(bot, msg, text, role) {
       draft: { ...state.draft, discount: { type: state.discountType, value } },
     });
   } else if (state.step === "order_cancel_confirm") {
-    if (!/^إ?الغاء$/i.test(text)) {
+    if (!/^(الغاء|إلغاء)$/i.test(text)) {
       await promptForState(bot, msg, state);
       return true;
     }
@@ -2929,7 +2940,7 @@ async function handleOrderMessage(bot, msg, text, role) {
     await showEditRoot(bot, msg, state, "تمت الإضافة وإعادة حساب الإجمالي ✅");
     return true;
   } else if (state.step === "edit_cancel_confirm") {
-    if (!/^إ?الغاء$/i.test(text)) {
+    if (!/^(الغاء|إلغاء)$/i.test(text)) {
       await bot.sendMessage(
         msg.chat.id,
         "لم يتم إلغاء الأوردر. إذا كنت متأكداً اكتب «الغاء» حرفياً، أو اضغط رجوع خطوة.",
