@@ -644,16 +644,16 @@ async function promptForState(bot, msg, state) {
       textKeyboard("اسم الطفل"),
     ],
     edit_add_child_cartoon: [
-      "اكتب الشخصية الكرتونية للطفل الجديد:",
-      textKeyboard("الشخصية"),
+      "اكتب الشخصية الكرتونية للطفل الجديد، أو اضغط تخطي:",
+      optionalTextKeyboard("الشخصية"),
     ],
     edit_add_child_school: [
-      "اكتب مدرسة الطفل الجديد:",
-      textKeyboard("المدرسة"),
+      "اكتب مدرسة الطفل الجديد، أو اضغط تخطي:",
+      optionalTextKeyboard("المدرسة"),
     ],
     edit_add_child_stage: [
-      "اكتب المرحلة الدراسية للطفل الجديد:",
-      textKeyboard("المرحلة الدراسية"),
+      "اكتب المرحلة الدراسية للطفل الجديد، أو اضغط تخطي:",
+      optionalTextKeyboard("المرحلة الدراسية"),
     ],
     edit_add_child_color: [
       "اكتب لون ليبل الملابس للطفل الجديد:",
@@ -2655,28 +2655,34 @@ async function handleOrderMessage(bot, msg, text, role) {
     return true;
   } else if (state.step === "edit_add_child_cartoon") {
     const value = normalizeName(text);
-    if (!value) return true;
     state = await moveForward(telegramId, state, {
       step: "edit_add_child_school",
-      editNewChild: { ...state.editNewChild, cartoonCharacter: value },
+      editNewChild: {
+        ...state.editNewChild,
+        cartoonCharacter: text === "تخطي" || !value ? "غير محدد" : value,
+      },
     });
     await promptForState(bot, msg, state);
     return true;
   } else if (state.step === "edit_add_child_school") {
     const value = normalizeName(text);
-    if (!value) return true;
     state = await moveForward(telegramId, state, {
       step: "edit_add_child_stage",
-      editNewChild: { ...state.editNewChild, schoolName: value },
+      editNewChild: {
+        ...state.editNewChild,
+        schoolName: text === "تخطي" || !value ? "غير محدد" : value,
+      },
     });
     await promptForState(bot, msg, state);
     return true;
   } else if (state.step === "edit_add_child_stage") {
     const value = normalizeName(text);
-    if (!value) return true;
     state = await moveForward(telegramId, state, {
       step: "edit_add_child_color",
-      editNewChild: { ...state.editNewChild, schoolStage: value },
+      editNewChild: {
+        ...state.editNewChild,
+        schoolStage: text === "تخطي" || !value ? "غير محدد" : value,
+      },
     });
     await promptForState(bot, msg, state);
     return true;
