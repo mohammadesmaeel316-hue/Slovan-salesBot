@@ -50,7 +50,7 @@ const ORDER_STEPS = new Set([
   "order_cartoon",
   "order_school",
   "order_stage",
-  "order_line_label_color", "order_line_label_white_count", "order_line_label_black_count",
+  "order_line_label_color", "order_line_label_white_count", "order_line_label_black_count", "order_line_custom_label",
   "order_type",
   "order_list",
   "order_search",
@@ -84,7 +84,7 @@ const ORDER_STEPS = new Set([
   "edit_line_menu",
   "edit_line_quantity",
   "edit_line_delete_confirm",
-  "edit_line_label_color", "edit_line_label_white_count", "edit_line_label_black_count",
+  "edit_line_label_color", "edit_line_label_white_count", "edit_line_label_black_count", "edit_line_custom_label",
   "edit_add_child_name",
   "edit_add_child_cartoon",
   "edit_add_child_school",
@@ -94,7 +94,7 @@ const ORDER_STEPS = new Set([
   "edit_add_list",
   "edit_add_search",
   "edit_add_quantity",
-  "edit_add_line_label_color", "edit_add_line_label_white_count", "edit_add_line_label_black_count",
+  "edit_add_line_label_color", "edit_add_line_label_white_count", "edit_add_line_label_black_count", "edit_add_line_custom_label",
   "edit_delivery_list",
   "edit_delivery_search",
   "edit_cancel_confirm",
@@ -329,7 +329,28 @@ function optionalTextKeyboard(placeholder) {
 function lineLabelKeyboard(quantity = 2) {
   const row = [{ text: "أبيض" }, { text: "أسود" }];
   if (Number(quantity) !== 1) row.push({ text: "الاثنين" });
-  return keyboard(controls([row]), "اختر لون الليبل");
+  return keyboard(controls([row, [{ text: "لون آخر" }]]), "اختر لون الليبل");
+}
+
+function packageLabelCount(pkg) {
+  if (!pkg || !Array.isArray(pkg.items)) return 0;
+  return pkg.items.reduce((sum, it) => {
+    const name = String(it.item_name || "").toLowerCase();
+    if (name.includes("ليبل") && name.includes("ملابس")) return sum + Number(it.quantity || 0);
+    return sum;
+  }, 0);
+}
+
+async function getLineLabelCount(line) {
+  if (!line) return 1;
+  if (line.line_type === "package" && line.reference_id) {
+    try {
+      const pkg = await getPackageById(line.reference_id);
+      const c = packageLabelCount(pkg);
+      if (c > 0) return c;
+    } catch {}
+  }
+  return Number(line.quantity || 1);
 }
 
 function orderTypeKeyboard() {
@@ -538,9 +559,10 @@ async function promptForState(bot, msg, state) {
       "اكتب المرحلة الدراسية، أو اضغط تخطي:",
       optionalTextKeyboard("المرحلة الدراسية"),
     ],
-    order_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard(state.pendingLine?.quantity)],
-    order_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.pendingLine?.quantity || 1}`, textKeyboard("عدد الأبيض")],
-    order_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.pendingLine?.quantity || 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
+    order_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard(state.pendingLine?.labelCount ?? state.pendingLine?.quantity)],
+    order_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.pendingLine?.labelCount ?? state.pendingLine?.quantity ?? 1}`, textKeyboard("عدد الأبيض")],
+    order_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.pendingLine?.labelCount ?? state.pendingLine?.quantity ?? 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
+    order_line_custom_label: ["اكتب لون ليبل الملابس:", textKeyboard("لون الليبل")],
     order_type: ["اختر: باكدج أم صنف عادي؟", orderTypeKeyboard()],
     order_quantity: [
       `اكتب الكمية المطلوبة من «${state.pendingItem?.itemName || "الصنف"}».\nالمسموح: ${state.pendingItem?.minQuantity ?? "بدون حد أدنى"} إلى ${state.pendingItem?.maxQuantity ?? "بدون حد أقصى"}.`,
@@ -610,9 +632,10 @@ async function promptForState(bot, msg, state) {
       "اكتب تفاصيل الدفع:",
       keyboard([[{ text: "رجوع خطوة" }, { text: "إلغاء" }]], "تفاصيل الدفع"),
     ],
-    edit_line_label_color: ["اختر لون الليبل لهذا المنتج:", lineLabelKeyboard(state.editLine?.quantity)],
-    edit_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.editLine?.quantity || 1}`, textKeyboard("عدد الأبيض")],
-    edit_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.editLine?.quantity || 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
+    edit_line_label_color: ["اختر لون الليبل لهذا المنتج:", lineLabelKeyboard(state.editLineLabelCount ?? state.editLine?.quantity)],
+    edit_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.editLineLabelCount ?? state.editLine?.quantity ?? 1}`, textKeyboard("عدد الأبيض")],
+    edit_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.editLineLabelCount ?? state.editLine?.quantity ?? 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
+    edit_line_custom_label: ["اكتب لون ليبل الملابس:", textKeyboard("لون الليبل")],
     admin_cancel_order_code: [
       "اكتب رقم الأوردر المراد إلغاؤه، مثال: ORD#001",
       keyboard([[{ text: "إلغاء" }]], "رقم الأوردر"),
@@ -642,9 +665,10 @@ async function promptForState(bot, msg, state) {
       optionalTextKeyboard("المرحلة الدراسية"),
     ],
     edit_add_type: ["اختر ما تريد إضافته:", orderTypeKeyboard()],
-    edit_add_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard(state.pendingLine?.quantity)],
-    edit_add_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.pendingLine?.quantity || 1}`, textKeyboard("عدد الأبيض")],
-    edit_add_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.pendingLine?.quantity || 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
+    edit_add_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard(state.pendingLine?.labelCount ?? state.pendingLine?.quantity)],
+    edit_add_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.pendingLine?.labelCount ?? state.pendingLine?.quantity ?? 1}`, textKeyboard("عدد الأبيض")],
+    edit_add_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.pendingLine?.labelCount ?? state.pendingLine?.quantity ?? 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
+    edit_add_line_custom_label: ["اكتب لون ليبل الملابس:", textKeyboard("لون الليبل")],
   };
   if (
     [
@@ -1858,11 +1882,13 @@ async function handleOrderMessage(bot, msg, text, role) {
     }
     if (state.listType === "package") {
       const row = selected.value;
+      const labelCount = row.requires_label_color ? (packageLabelCount(row) || 1) : 1;
       const line = {
         type: "package",
         referenceId: row.id || null,
         description: row.package_name,
         quantity: 1,
+        labelCount,
         unitPrice: Number(row.total_price),
         lineTotal: Number(row.total_price),
         childIndex: state.draft.currentChildIndex,
@@ -2019,6 +2045,7 @@ async function handleOrderMessage(bot, msg, text, role) {
       referenceId: item.referenceId,
       description: item.itemName,
       quantity,
+      labelCount: quantity,
       unitPrice: item.price,
       lineTotal: Math.round(item.price * quantity * 100) / 100,
       childIndex: state.draft.currentChildIndex,
@@ -2031,19 +2058,28 @@ async function handleOrderMessage(bot, msg, text, role) {
       draft: item.requiresLabelColor ? state.draft : { ...state.draft, lines: [...state.draft.lines, line] },
     });
   } else if (state.step === "order_line_label_color") {
+    const labelCount = state.pendingLine.labelCount ?? state.pendingLine.quantity;
     if (text === "أبيض" || text === "أسود") {
-      const line = { ...state.pendingLine, details: { labelColor: text, [text === "أبيض" ? "whiteCount" : "blackCount"]: state.pendingLine.quantity } };
+      const line = { ...state.pendingLine, details: { labelColor: text, [text === "أبيض" ? "whiteCount" : "blackCount"]: labelCount } };
       state = await moveForward(telegramId, state, { step: "order_post_add", pendingLine: null, draft: { ...state.draft, lines: [...state.draft.lines, line] } });
     } else if (text === "الاثنين") state = await moveForward(telegramId, state, { step: "order_line_label_white_count" });
+    else if (text === "لون آخر") state = await moveForward(telegramId, state, { step: "order_line_custom_label" });
     else { await promptForState(bot, msg, state); return true; }
+  } else if (state.step === "order_line_custom_label") {
+    const value = normalizeName(text);
+    if (!value) return true;
+    const line = { ...state.pendingLine, details: { labelColor: value } };
+    state = await moveForward(telegramId, state, { step: "order_post_add", pendingLine: null, draft: { ...state.draft, lines: [...state.draft.lines, line] } });
   } else if (state.step === "order_line_label_white_count") {
+    const labelCount = state.pendingLine.labelCount ?? state.pendingLine.quantity;
     const white = Number(String(text).replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)));
-    if (!Number.isSafeInteger(white) || white < 0 || white > state.pendingLine.quantity) { await bot.sendMessage(msg.chat.id, "اكتب عدداً صحيحاً لا يزيد عن الكمية المطلوبة."); return true; }
+    if (!Number.isSafeInteger(white) || white < 0 || white > labelCount) { await bot.sendMessage(msg.chat.id, "اكتب عدداً صحيحاً لا يزيد عن الكمية المطلوبة."); return true; }
     state = await moveForward(telegramId, state, { step: "order_line_label_black_count", labelWhiteCount: white });
   } else if (state.step === "order_line_label_black_count") {
+    const labelCount = state.pendingLine.labelCount ?? state.pendingLine.quantity;
     const black = Number(String(text).replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)));
     const white = Number(state.labelWhiteCount || 0);
-    if (!Number.isSafeInteger(black) || black < 0 || white + black > state.pendingLine.quantity) { await bot.sendMessage(msg.chat.id, "مجموع الأبيض والأسود لا يمكن أن يزيد عن الكمية المطلوبة."); return true; }
+    if (!Number.isSafeInteger(black) || black < 0 || white + black > labelCount) { await bot.sendMessage(msg.chat.id, "مجموع الأبيض والأسود لا يمكن أن يزيد عن الكمية المطلوبة."); return true; }
     const line = { ...state.pendingLine, details: { labelColor: "الاثنين", whiteCount: white, blackCount: black } };
     state = await moveForward(telegramId, state, { step: "order_post_add", pendingLine: null, labelWhiteCount: null, draft: { ...state.draft, lines: [...state.draft.lines, line] } });
   } else if (state.step === "order_post_add") {
@@ -2580,8 +2616,10 @@ async function handleOrderMessage(bot, msg, text, role) {
       return true;
     }
     if (text === "تعديل لون الليبل") {
+      const labelCount = await getLineLabelCount(state.editLine);
       state = await moveForward(telegramId, state, {
         step: "edit_line_label_color",
+        editLineLabelCount: labelCount,
         labelWhiteCount: null,
       });
       await promptForState(bot, msg, state);
@@ -2687,13 +2725,14 @@ async function handleOrderMessage(bot, msg, text, role) {
     );
     return true;
   } else if (state.step === "edit_line_label_color") {
+    const labelCount = state.editLineLabelCount ?? state.editLine.quantity;
     if (text === "أبيض" || text === "أسود") {
       await updateOrderLineDetails(
         state.editOrderCode,
         state.editLineId,
         {
           labelColor: text,
-          [text === "أبيض" ? "whiteCount" : "blackCount"]: state.editLine.quantity,
+          [text === "أبيض" ? "whiteCount" : "blackCount"]: labelCount,
         },
         telegramId,
       );
@@ -2701,6 +2740,7 @@ async function handleOrderMessage(bot, msg, text, role) {
         step: "edit_order_menu",
         editLineId: null,
         editLine: null,
+        editLineLabelCount: null,
         labelWhiteCount: null,
       });
       await showEditRoot(bot, msg, state, "تم تعديل لون الليبل ✅");
@@ -2713,16 +2753,42 @@ async function handleOrderMessage(bot, msg, text, role) {
       await promptForState(bot, msg, state);
       return true;
     }
+    if (text === "لون آخر") {
+      state = await moveForward(telegramId, state, {
+        step: "edit_line_custom_label",
+      });
+      await promptForState(bot, msg, state);
+      return true;
+    }
     await promptForState(bot, msg, state);
     return true;
+  } else if (state.step === "edit_line_custom_label") {
+    const value = normalizeName(text);
+    if (!value) return true;
+    await updateOrderLineDetails(
+      state.editOrderCode,
+      state.editLineId,
+      { labelColor: value },
+      telegramId,
+    );
+    state = await moveForward(telegramId, state, {
+      step: "edit_order_menu",
+      editLineId: null,
+      editLine: null,
+      editLineLabelCount: null,
+      labelWhiteCount: null,
+    });
+    await showEditRoot(bot, msg, state, "تم تعديل لون الليبل ✅");
+    return true;
   } else if (state.step === "edit_line_label_white_count") {
+    const labelCount = state.editLineLabelCount ?? state.editLine.quantity;
     const white = Number(
       String(text).replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
     );
     if (
       !Number.isSafeInteger(white) ||
       white < 0 ||
-      white > state.editLine.quantity
+      white > labelCount
     ) {
       await bot.sendMessage(
         msg.chat.id,
@@ -2738,11 +2804,12 @@ async function handleOrderMessage(bot, msg, text, role) {
     await promptForState(bot, msg, state);
     return true;
   } else if (state.step === "edit_line_label_black_count") {
+    const labelCount = state.editLineLabelCount ?? state.editLine.quantity;
     const black = Number(
       String(text).replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
     );
     const white = Number(state.labelWhiteCount || 0);
-    if (!Number.isSafeInteger(black) || black < 0 || white + black > state.editLine.quantity) {
+    if (!Number.isSafeInteger(black) || black < 0 || white + black > labelCount) {
       await bot.sendMessage(
         msg.chat.id,
         "مجموع الأبيض والأسود لا يمكن أن يزيد عن الكمية المطلوبة.",
@@ -2760,6 +2827,7 @@ async function handleOrderMessage(bot, msg, text, role) {
       step: "edit_order_menu",
       editLineId: null,
       editLine: null,
+      editLineLabelCount: null,
       labelWhiteCount: null,
     });
     await showEditRoot(bot, msg, state, "تم تعديل لون الليبل ✅");
@@ -2898,11 +2966,13 @@ async function handleOrderMessage(bot, msg, text, role) {
     }
     if (state.listType === "package") {
       const row = selected.value;
+      const labelCount = row.requires_label_color ? (packageLabelCount(row) || 1) : 1;
       const line = {
         type: "package",
         referenceId: row.id,
         description: row.package_name,
         quantity: 1,
+        labelCount,
         unitPrice: Number(row.total_price),
         lineTotal: Number(row.total_price),
         details: {},
@@ -2987,6 +3057,7 @@ async function handleOrderMessage(bot, msg, text, role) {
       referenceId: item.referenceId,
       description: item.itemName,
       quantity,
+      labelCount: quantity,
       unitPrice: item.price,
       lineTotal: Math.round(item.price * quantity * 100) / 100,
       details: {},
@@ -3021,10 +3092,11 @@ async function handleOrderMessage(bot, msg, text, role) {
     );
     return true;
   } else if (state.step === "edit_add_line_label_color") {
+    const labelCount = state.pendingLine.labelCount ?? state.pendingLine.quantity;
     if (text === "أبيض" || text === "أسود") {
       const line = {
         ...state.pendingLine,
-        details: { labelColor: text, [text === "أبيض" ? "whiteCount" : "blackCount"]: state.pendingLine.quantity },
+        details: { labelColor: text, [text === "أبيض" ? "whiteCount" : "blackCount"]: labelCount },
       };
       await addOrderLine(state.editOrderCode, state.editChildId, line, telegramId);
       state = await moveForward(telegramId, state, {
@@ -3042,13 +3114,33 @@ async function handleOrderMessage(bot, msg, text, role) {
       await promptForState(bot, msg, state);
       return true;
     }
+    if (text === "لون آخر") {
+      state = await moveForward(telegramId, state, {
+        step: "edit_add_line_custom_label",
+      });
+      await promptForState(bot, msg, state);
+      return true;
+    }
     await promptForState(bot, msg, state);
     return true;
+  } else if (state.step === "edit_add_line_custom_label") {
+    const value = normalizeName(text);
+    if (!value) return true;
+    const line = { ...state.pendingLine, details: { labelColor: value } };
+    await addOrderLine(state.editOrderCode, state.editChildId, line, telegramId);
+    state = await moveForward(telegramId, state, {
+      step: "edit_order_menu",
+      pendingLine: null,
+      labelWhiteCount: null,
+    });
+    await showEditRoot(bot, msg, state, "تمت الإضافة وإعادة حساب الإجمالي ✅");
+    return true;
   } else if (state.step === "edit_add_line_label_white_count") {
+    const labelCount = state.pendingLine.labelCount ?? state.pendingLine.quantity;
     const white = Number(
       String(text).replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
     );
-    if (!Number.isSafeInteger(white) || white < 0 || white > state.pendingLine.quantity) {
+    if (!Number.isSafeInteger(white) || white < 0 || white > labelCount) {
       await bot.sendMessage(
         msg.chat.id,
         "اكتب عدداً صحيحاً لا يزيد عن الكمية المطلوبة.",
@@ -3063,11 +3155,12 @@ async function handleOrderMessage(bot, msg, text, role) {
     await promptForState(bot, msg, state);
     return true;
   } else if (state.step === "edit_add_line_label_black_count") {
+    const labelCount = state.pendingLine.labelCount ?? state.pendingLine.quantity;
     const black = Number(
       String(text).replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
     );
     const white = Number(state.labelWhiteCount || 0);
-    if (!Number.isSafeInteger(black) || black < 0 || white + black > state.pendingLine.quantity) {
+    if (!Number.isSafeInteger(black) || black < 0 || white + black > labelCount) {
       await bot.sendMessage(
         msg.chat.id,
         "مجموع الأبيض والأسود لا يمكن أن يزيد عن الكمية المطلوبة.",
