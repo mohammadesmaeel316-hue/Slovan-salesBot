@@ -326,7 +326,11 @@ function optionalTextKeyboard(placeholder) {
   );
 }
 
-function lineLabelKeyboard() { return keyboard(controls([[{ text: "أبيض" }, { text: "أسود" }, { text: "الاثنين" }]]), "اختر لون الليبل"); }
+function lineLabelKeyboard(quantity = 2) {
+  const row = [{ text: "أبيض" }, { text: "أسود" }];
+  if (Number(quantity) !== 1) row.push({ text: "الاثنين" });
+  return keyboard(controls([row]), "اختر لون الليبل");
+}
 
 function orderTypeKeyboard() {
   return keyboard(
@@ -534,7 +538,7 @@ async function promptForState(bot, msg, state) {
       "اكتب المرحلة الدراسية، أو اضغط تخطي:",
       optionalTextKeyboard("المرحلة الدراسية"),
     ],
-    order_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard()],
+    order_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard(state.pendingLine?.quantity)],
     order_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.pendingLine?.quantity || 1}`, textKeyboard("عدد الأبيض")],
     order_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.pendingLine?.quantity || 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
     order_type: ["اختر: باكدج أم صنف عادي؟", orderTypeKeyboard()],
@@ -606,7 +610,7 @@ async function promptForState(bot, msg, state) {
       "اكتب تفاصيل الدفع:",
       keyboard([[{ text: "رجوع خطوة" }, { text: "إلغاء" }]], "تفاصيل الدفع"),
     ],
-    edit_line_label_color: ["اختر لون الليبل لهذا المنتج:", lineLabelKeyboard()],
+    edit_line_label_color: ["اختر لون الليبل لهذا المنتج:", lineLabelKeyboard(state.editLine?.quantity)],
     edit_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.editLine?.quantity || 1}`, textKeyboard("عدد الأبيض")],
     edit_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.editLine?.quantity || 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
     admin_cancel_order_code: [
@@ -638,7 +642,7 @@ async function promptForState(bot, msg, state) {
       optionalTextKeyboard("المرحلة الدراسية"),
     ],
     edit_add_type: ["اختر ما تريد إضافته:", orderTypeKeyboard()],
-    edit_add_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard()],
+    edit_add_line_label_color: ["اختر لون ليبل الملابس لهذا الصنف:", lineLabelKeyboard(state.pendingLine?.quantity)],
     edit_add_line_label_white_count: [`اكتب عدد الليبل الأبيض. الكمية المطلوبة: ${state.pendingLine?.quantity || 1}`, textKeyboard("عدد الأبيض")],
     edit_add_line_label_black_count: [`اكتب عدد الليبل الأسود. المتبقي: ${Math.max(0, (state.pendingLine?.quantity || 1) - (state.labelWhiteCount || 0))}`, textKeyboard("عدد الأسود")],
   };
@@ -1600,26 +1604,43 @@ async function handleOrderMessage(bot, msg, text, role) {
     }
     const nextStep =
       state.draft.parentName && state.draft.parentPhone
-        ? "order_child_name"
+        ? "order_delivery_list"
         : "order_parent_name";
-    state = await moveForward(
-      telegramId,
-      state,
-      text === "أخرى"
-        ? { step: "order_other_source" }
-        : { step: nextStep, draft: { ...state.draft, source: text } },
-    );
+    const baseDraft = text === "أخرى" ? state.draft : { ...state.draft, source: text };
+    if (text === "أخرى") {
+      state = await moveForward(telegramId, state, { step: "order_other_source" });
+    } else if (nextStep === "order_delivery_list") {
+      state = await moveForward(telegramId, state, {
+        step: "order_delivery_list",
+        listType: "delivery",
+        query: "",
+        page: 0,
+        draft: baseDraft,
+      });
+    } else {
+      state = await moveForward(telegramId, state, { step: nextStep, draft: baseDraft });
+    }
   } else if (state.step === "order_other_source") {
     const source = normalizeName(text);
     if (!source) return true;
     const nextStep =
       state.draft.parentName && state.draft.parentPhone
-        ? "order_child_name"
+        ? "order_delivery_list"
         : "order_parent_name";
-    state = await moveForward(telegramId, state, {
-      step: nextStep,
-      draft: { ...state.draft, source },
-    });
+    if (nextStep === "order_delivery_list") {
+      state = await moveForward(telegramId, state, {
+        step: "order_delivery_list",
+        listType: "delivery",
+        query: "",
+        page: 0,
+        draft: { ...state.draft, source },
+      });
+    } else {
+      state = await moveForward(telegramId, state, {
+        step: nextStep,
+        draft: { ...state.draft, source },
+      });
+    }
   } else if (state.step === "order_child_name") {
     const childName = normalizeName(text);
     if (childName.split(" ").filter(Boolean).length < 2) {
@@ -1701,9 +1722,13 @@ async function handleOrderMessage(bot, msg, text, role) {
       return true;
     }
   } else if (state.step === "order_parent_phone_2") {
-    const nextStep = state.draft.children.length ? "order_cartoon" : "order_child_name";
     if (text === "تخطي")
-      state = await moveForward(telegramId, state, { step: nextStep });
+      state = await moveForward(telegramId, state, {
+        step: "order_delivery_list",
+        listType: "delivery",
+        query: "",
+        page: 0,
+      });
     else {
       const parentPhone2 = normalizePhone(text);
       if (!parentPhone2) {
@@ -1720,9 +1745,13 @@ async function handleOrderMessage(bot, msg, text, role) {
       });
     }
   } else if (state.step === "order_parent_phone_3") {
-    const nextStep = state.draft.children.length ? "order_cartoon" : "order_child_name";
     if (text === "تخطي")
-      state = await moveForward(telegramId, state, { step: nextStep });
+      state = await moveForward(telegramId, state, {
+        step: "order_delivery_list",
+        listType: "delivery",
+        query: "",
+        page: 0,
+      });
     else {
       const parentPhone3 = normalizePhone(text);
       if (!parentPhone3) {
@@ -1734,7 +1763,10 @@ async function handleOrderMessage(bot, msg, text, role) {
         return true;
       }
       state = await moveForward(telegramId, state, {
-        step: nextStep,
+        step: "order_delivery_list",
+        listType: "delivery",
+        query: "",
+        page: 0,
         draft: { ...state.draft, parentPhone3 },
       });
     }
@@ -1901,7 +1933,7 @@ async function handleOrderMessage(bot, msg, text, role) {
       return true;
     }
     state = await moveForward(telegramId, state, {
-      step: "order_notes",
+      step: "order_child_name",
       addressMode: null,
       draft: { ...state.draft, address },
     });
@@ -2032,10 +2064,7 @@ async function handleOrderMessage(bot, msg, text, role) {
   } else if (state.step === "order_discount_type") {
     if (text === "بدون خصم")
       state = await moveForward(telegramId, state, {
-        step: "order_delivery_list",
-        listType: "delivery",
-        query: "",
-        page: 0,
+        step: "order_notes",
         draft: { ...state.draft, discount: { type: null, value: 0 } },
       });
     else if (text === "خصم نسبة مئوية")
@@ -2070,10 +2099,7 @@ async function handleOrderMessage(bot, msg, text, role) {
       return true;
     }
     state = await moveForward(telegramId, state, {
-      step: "order_delivery_list",
-      listType: "delivery",
-      query: "",
-      page: 0,
+      step: "order_notes",
       discountType: null,
       draft: { ...state.draft, discount: { type: state.discountType, value } },
     });
