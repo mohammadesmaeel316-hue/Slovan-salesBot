@@ -2079,7 +2079,7 @@ async function handleOrderMessage(bot, msg, text, role) {
     const labelCount = state.pendingLine.labelCount ?? state.pendingLine.quantity;
     const black = Number(String(text).replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)));
     const white = Number(state.labelWhiteCount || 0);
-    if (!Number.isSafeInteger(black) || black < 0 || white + black > labelCount) { await bot.sendMessage(msg.chat.id, "مجموع الأبيض والأسود لا يمكن أن يزيد عن الكمية المطلوبة."); return true; }
+    if (!Number.isSafeInteger(black) || black < 0 || white + black !== labelCount) { await bot.sendMessage(msg.chat.id, `مجموع الأبيض والأسود يجب أن يساوي ${labelCount}.`, textKeyboard("عدد الأسود")); return true; }
     const line = { ...state.pendingLine, details: { labelColor: "الاثنين", whiteCount: white, blackCount: black } };
     state = await moveForward(telegramId, state, { step: "order_post_add", pendingLine: null, labelWhiteCount: null, draft: { ...state.draft, lines: [...state.draft.lines, line] } });
   } else if (state.step === "order_post_add") {
@@ -2809,10 +2809,10 @@ async function handleOrderMessage(bot, msg, text, role) {
       String(text).replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
     );
     const white = Number(state.labelWhiteCount || 0);
-    if (!Number.isSafeInteger(black) || black < 0 || white + black > labelCount) {
+    if (!Number.isSafeInteger(black) || black < 0 || white + black !== labelCount) {
       await bot.sendMessage(
         msg.chat.id,
-        "مجموع الأبيض والأسود لا يمكن أن يزيد عن الكمية المطلوبة.",
+        `مجموع الأبيض والأسود يجب أن يساوي ${labelCount}.`,
         textKeyboard("عدد الأسود"),
       );
       return true;
@@ -3160,10 +3160,10 @@ async function handleOrderMessage(bot, msg, text, role) {
       String(text).replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
     );
     const white = Number(state.labelWhiteCount || 0);
-    if (!Number.isSafeInteger(black) || black < 0 || white + black > labelCount) {
+    if (!Number.isSafeInteger(black) || black < 0 || white + black !== labelCount) {
       await bot.sendMessage(
         msg.chat.id,
-        "مجموع الأبيض والأسود لا يمكن أن يزيد عن الكمية المطلوبة.",
+        `مجموع الأبيض والأسود يجب أن يساوي ${labelCount}.`,
         textKeyboard("عدد الأسود"),
       );
       return true;
